@@ -1,0 +1,15 @@
+{
+  "name": "Pantalla del DM (ES)",
+  "version": "1.0.1-es",
+  "manifest_version": 1,
+  "author": "John Eckert (traducción al español)",
+  "homepage_url": "https://github.com/johneckert/owlbear-dmscreen",
+  "description": "Tablas de referencia de la pantalla del DM de D&D 5e, en español.",
+  "action": {
+    "title": "Pantalla del DM",
+    "icon": "icon.svg",
+    "popover": "index.html",
+    "height": 1600,
+    "width": 2500
+  }
+}

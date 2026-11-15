@@ -1,0 +1,17 @@
+{
+  "name": "Dados (ES)",
+  "version": "2.0.0-es",
+  "manifest_version": 1,
+  "author": "Owlbear Rodeo (traducción al español)",
+  "homepage_url": "https://extensions.owlbear.rodeo/dice",
+  "icon": "logo.png",
+  "description": "Dados 3D para sistemas d20, en español",
+  "action": {
+    "title": "Dados",
+    "icon": "icon.svg",
+    "popover": "index.html",
+    "height": 700,
+    "width": 375
+  },
+  "background_url": "background.html"
+}
