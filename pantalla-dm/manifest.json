@@ -7,8 +7,8 @@
   "description": "Tablas de referencia de la pantalla del DM de D&D 5e, en español.",
   "action": {
     "title": "Pantalla del DM",
-    "icon": "icon.svg",
-    "popover": "index.html",
+    "icon": "/owlbear-es/pantalla-dm/icon.svg",
+    "popover": "/owlbear-es/pantalla-dm/index.html",
     "height": 1600,
     "width": 2500
   }

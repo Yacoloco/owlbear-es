@@ -4,12 +4,12 @@
   "manifest_version": 1,
   "author": "Owlbear Rodeo (traducción al español)",
   "homepage_url": "https://extensions.owlbear.rodeo/initiative-tracker",
-  "icon": "logo.png",
+  "icon": "/owlbear-es/iniciativa/logo.png",
   "description": "Tracker de iniciativa simple, visible para vos y tus jugadores",
   "action": {
     "title": "Iniciativa",
-    "icon": "icon.svg",
-    "popover": "index.html",
+    "icon": "/owlbear-es/iniciativa/icon.svg",
+    "popover": "/owlbear-es/iniciativa/index.html",
     "height": 129,
     "width": 250
   }
