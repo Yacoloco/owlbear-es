@@ -5,7 +5,7 @@ export const ID = "com.yacoloco.fichas";
 export const KEY = `${ID}/ficha`;
 export const MODAL_ID = `${ID}/modal`;
 export const BASE = "/owlbear-es/fichas";
-export const VERSION = "1.1";
+export const VERSION = "1.2";
 
 export const STATS = ["FUE", "DES", "CON", "INT", "SAB", "CAR"];
 export const TIPOS = { pj: "PJ", pnj: "PNJ", enemigo: "Enemigo" };
@@ -241,4 +241,109 @@ export function updateLinkTemplate(name, data) {
   link.data = { owner: data.owner || null, ownerName: data.ownerName || "", ficha: data.ficha };
   link.tipo = data.ficha.tipo;
   saveLinks(links);
+}
+
+// ---------- Estados ----------
+
+export const ESTADOS = [
+  ["cegado", "Cegado", "No ve. Falla pruebas que requieran vista. Sus ataques tienen desventaja; los ataques contra él, ventaja."],
+  ["hechizado", "Hechizado", "No puede atacar a quien lo hechizó. Ese tiene ventaja en pruebas sociales contra él."],
+  ["ensordecido", "Sordo", "No oye. Falla pruebas que requieran oído."],
+  ["asustado", "Asustado", "Desventaja en pruebas y ataques mientras vea la fuente del miedo. No puede acercarse a ella."],
+  ["agarrado", "Agarrado", "Velocidad 0. Desventaja en ataques contra todo lo que no sea quien lo agarra."],
+  ["incapacitado", "Incapacitado", "No puede hacer acciones, acciones adicionales ni reacciones. Pierde la concentración."],
+  ["invisible", "Invisible", "No se lo puede ver. Ventaja en sus ataques; desventaja en los ataques contra él."],
+  ["paralizado", "Paralizado", "Incapacitado y velocidad 0. Falla salvaciones de FUE y DES. Ataques contra él con ventaja; crítico si es a 5 pies."],
+  ["petrificado", "Petrificado", "Convertido en piedra: incapacitado, resistencia a todo el daño, falla salvaciones de FUE y DES."],
+  ["envenenado", "Envenenado", "Desventaja en tiradas de ataque y pruebas de característica."],
+  ["derribado", "Derribado", "Solo se arrastra. Desventaja en ataques. Ataques a 5 pies contra él con ventaja; a distancia, con desventaja."],
+  ["apresado", "Apresado", "Velocidad 0. Desventaja en ataques y salvaciones de DES. Ataques contra él con ventaja."],
+  ["aturdido", "Aturdido", "Incapacitado. Falla salvaciones de FUE y DES. Ataques contra él con ventaja."],
+  ["inconsciente", "Inconsciente", "Incapacitado, derribado y sin percibir nada. Ataques contra él con ventaja; crítico si es a 5 pies."],
+  ["concentrado", "Concentrado", "Mantiene un conjuro de concentración. Si recibe daño: salvación de CON CD 10 o la mitad del daño."],
+];
+export const ESTADO_LABEL = Object.fromEntries(ESTADOS.map(([k, l]) => [k, l]));
+
+// ---------- Recursos (espacios de conjuro, usos por descanso) ----------
+// { n: nombre, max, usados, rec: "corto" | "largo", dado?: "d10" (dados de golpe) }
+
+const PRESETS = {
+  "shak-ko": [["Espacios de conjuro nv. 1", 2, "largo"], ["Marca del cazador gratis", 2, "largo"], ["Dados de golpe", 2, "largo", "d10"]],
+  copelo: [["Espacios de conjuro nv. 1", 2, "largo"], ["Imposición de manos (PG)", 10, "largo"], ["Aliento de fuego", 2, "largo"], ["Castigo divino gratis", 1, "largo"], ["Vuelo dracónico", 1, "largo"], ["Dados de golpe", 2, "largo", "d10"]],
+  nicho: [["Furia", 2, "largo"], ["Salto de las nubes", 2, "largo"], ["Forma grande", 1, "largo"], ["Dados de golpe", 2, "largo", "d12"]],
+  tachiana: [["Espacios de conjuro nv. 1", 3, "largo"], ["Puntos de hechicería", 2, "largo"], ["Dados de golpe", 2, "largo", "d6"]],
+  barundin: [["Espacios de conjuro nv. 1", 2, "largo"], ["Orden imperiosa gratis", 1, "largo"], ["Dados de golpe", 1, "largo", "d8"]],
+};
+
+/** Completa campos nuevos en fichas viejas (estados, recursos…). Devuelve la misma ficha. */
+export function normalizeSheet(f) {
+  if (!f) return f;
+  if (!Array.isArray(f.estados)) f.estados = [];
+  if (typeof f.agotamiento !== "number") f.agotamiento = 0;
+  if (!Array.isArray(f.recursos)) {
+    const p = PRESETS[f.id] || PRESETS[String(f.nombre || "").toLowerCase().replace(/[^a-z]/g, "")] || null;
+    f.recursos = p ? p.map(([n, max, rec, dado]) => ({ n, max, usados: 0, rec, ...(dado ? { dado } : {}) })) : [];
+  }
+  return f;
+}
+
+/** Bonificador de iniciativa: el de la ficha o, si no figura, el de Destreza. */
+export function initBonus(f) {
+  const m = String(f.detalles || "").match(/Iniciativa\**\s*([+-−]\d+)/);
+  return m ? Number(m[1].replace("−", "-")) : mod(f.stats && f.stats.DES);
+}
+
+/** Texto corto de los estados para mostrar arriba del token. */
+export function estadosText(f) {
+  const parts = (f.estados || []).map((k) => ESTADO_LABEL[k]).filter(Boolean);
+  if (f.agotamiento > 0) parts.push(`Agotamiento ${f.agotamiento}`);
+  return parts.join(" · ");
+}
+
+// ---------- Tiradas ----------
+
+export const ROLL_CHANNEL = `${ID}/tirada`;
+export const INIT_KEY = "rodeo.owlbear.initiative-tracker/metadata";
+
+const d = (n) => 1 + Math.floor(Math.random() * n);
+
+/**
+ * Tira una expresión tipo "1d8+3", "2d6", "d20+5" o "+5" (que es d20+5).
+ * modo: "normal" | "ventaja" | "desventaja" (solo afecta al d20).
+ */
+export function roll(expr, modo = "normal") {
+  let e = String(expr).replace(/\s+/g, "").replace("−", "-").toLowerCase();
+  if (/^[+-]\d+$/.test(e)) e = `1d20${e}`;
+  const m = e.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+  if (!m) return null;
+  const n = Math.min(50, Number(m[1] || 1));
+  const faces = Number(m[2]);
+  const bonus = Number(m[3] || 0);
+  let dice = [];
+  let note = "";
+  let nat = null;
+  if (faces === 20 && n === 1 && modo !== "normal") {
+    const a = d(20), b = d(20);
+    const pick = modo === "ventaja" ? Math.max(a, b) : Math.min(a, b);
+    dice = [pick];
+    note = `${modo === "ventaja" ? "ventaja" : "desventaja"}: ${a} y ${b}`;
+    nat = pick;
+  } else {
+    for (let i = 0; i < n; i++) dice.push(d(faces));
+    if (faces === 20 && n === 1) nat = dice[0];
+  }
+  const sum = dice.reduce((s, x) => s + x, 0);
+  const total = sum + bonus;
+  const detalle = note || (dice.length > 1 ? `[${dice.join(", ")}]` : `${dice[0]}`);
+  return {
+    expr: `${n > 1 || faces !== 20 ? n : 1}d${faces}${bonus ? (bonus > 0 ? `+${bonus}` : bonus) : ""}`,
+    total,
+    detalle: `${detalle}${bonus ? ` ${bonus > 0 ? "+" : "−"} ${Math.abs(bonus)}` : ""}`,
+    nat,
+  };
+}
+
+export function rollMessage(r, quien, que) {
+  const crit = r.nat === 20 ? " ✨¡20 natural!" : r.nat === 1 ? " 💀 1 natural" : "";
+  return `🎲 ${quien}${que ? ` · ${que}` : ""}: ${r.total}  (${r.detalle})${crit}`;
 }

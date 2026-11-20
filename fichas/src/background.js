@@ -1,5 +1,6 @@
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, KEY, MODAL_ID, BASE, VERSION, syncScene } from "./shared.js";
+import { ID, KEY, MODAL_ID, BASE, VERSION, syncScene, ROLL_CHANNEL } from "./shared.js";
+import { startBars } from "./bars.js";
 
 function openSheet(itemId) {
   OBR.modal.open({
@@ -42,6 +43,14 @@ OBR.onReady(async () => {
       if (context.items[0]) openSheet(context.items[0].id);
     },
   });
+
+  // Tiradas de los demás (y las propias públicas).
+  OBR.broadcast.onMessage(ROLL_CHANNEL, (e) => {
+    if (e.data && e.data.msg) OBR.notification.show(String(e.data.msg).slice(0, 300), "DEFAULT");
+  });
+
+  // Barras de vida y estados sobre los tokens.
+  startBars();
 
   // Fichas automáticas por nombre: las pone el navegador del DM, en cada escena que abre.
   let timer = null;

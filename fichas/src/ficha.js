@@ -3,6 +3,7 @@ import {
   KEY, MODAL_ID, STATS, TIPOS, mod, sg, $, esc, md, blankSheet,
   loadLibrary, mergeIntoLibrary, parseImport, sortSheets,
   normName, setLink, removeLink, copyFromLink, isToken, updateLinkTemplate,
+  ESTADOS, normalizeSheet, initBonus, roll, rollMessage, ROLL_CHANNEL, INIT_KEY,
 } from "./shared.js";
 
 const itemId = new URLSearchParams(location.search).get("item");
@@ -172,7 +173,7 @@ function hpBar(f) {
 }
 
 function renderSheet() {
-  const f = data.ficha;
+  const f = normalizeSheet(data.ficha);
   const canEdit = isGM || data.owner === me;
   const ownerSel = isGM ? `
     <div class="gm-bar">
@@ -188,6 +189,42 @@ function renderSheet() {
       <button id="change" title="Cambiar por otra ficha">🔁</button>
       <button id="remove" title="Quitarle la ficha a todos los tokens con este nombre">🗑</button>
     </div>` : "";
+
+  const modo = rollMode();
+  const rollBar = canEdit ? `
+    <div class="rollbar">
+      <span class="muted">🎲 Tocá cualquier <span class="roll demo">+5</span> o <span class="roll demo">1d8</span> para tirar.</span>
+      <span class="sp"></span>
+      <span class="seg" id="modo">
+        <button data-m="desventaja" class="${modo === "desventaja" ? "on" : ""}" title="Desventaja">⬇️</button>
+        <button data-m="normal" class="${modo === "normal" ? "on" : ""}" title="Normal">Normal</button>
+        <button data-m="ventaja" class="${modo === "ventaja" ? "on" : ""}" title="Ventaja">⬆️</button>
+      </span>
+      ${isGM ? `<button id="vis" title="Quién ve tus tiradas">${publicRolls() ? "👁 Públicas" : "🙈 Ocultas"}</button>` : ""}
+      <button id="init" title="Tirar iniciativa y anotarla en la extensión Iniciativa">⚔️ Iniciativa ${sg(initBonus(f))}</button>
+    </div>` : "";
+
+  const estados = `
+    <div class="estados">
+      ${ESTADOS.map(([k, l, d]) => `<button class="est ${f.estados.includes(k) ? "on" : ""}" data-est="${k}" title="${esc(d)}" ${canEdit ? "" : "disabled"}>${esc(l)}</button>`).join("")}
+      <span class="agot" title="Agotamiento: −2 a las tiradas de d20 por nivel; a 6, muere.">
+        Agotamiento
+        ${canEdit ? `<button id="ag-" class="mini">−</button>` : ""}<b>${f.agotamiento}</b>${canEdit ? `<button id="ag+" class="mini">+</button>` : ""}
+      </span>
+    </div>`;
+
+  const recursos = f.recursos.length ? `
+    <div class="recursos">
+      ${f.recursos.map((r, i) => `
+        <div class="rec">
+          <span class="rn">${esc(r.n)} <span class="muted">· ${r.rec === "corto" ? "descanso corto" : "descanso largo"}</span></span>
+          ${Number(r.max) <= 12
+            ? `<span class="pips">${Array.from({ length: Number(r.max) || 0 }, (_, j) => `<button class="pip ${j < (Number(r.max) - (Number(r.usados) || 0)) ? "full" : ""}" data-rec="${i}" data-j="${j}" ${canEdit ? "" : "disabled"}></button>`).join("")}</span>`
+            : `<span class="pool">${canEdit ? `<button class="mini" data-pool="${i}" data-d="-1">−</button>` : ""}<b>${Number(r.max) - (Number(r.usados) || 0)}</b> / ${esc(r.max)}${canEdit ? `<button class="mini" data-pool="${i}" data-d="1">+</button>` : ""}</span>`}
+          ${r.dado && canEdit ? `<button class="mini" data-hd="${i}" title="Gastar un dado de golpe: cura 1${esc(r.dado)} + CON">🎲 Gastar</button>` : ""}
+        </div>`).join("")}
+      ${canEdit ? `<div class="row rests"><button id="rest-short">☕ Descanso corto</button><button id="rest-long">🌙 Descanso largo</button></div>` : ""}
+    </div>` : (canEdit ? `<div class="row rests"><button id="rest-short">☕ Descanso corto</button><button id="rest-long">🌙 Descanso largo</button></div>` : "");
 
   $("app").innerHTML = `
     ${ownerSel}
@@ -220,16 +257,25 @@ function renderSheet() {
       ${hpBar(f)}
     </div>
 
+    ${rollBar}
+
     <div class="stats">
-      ${STATS.map((k) => `<div class="stat"><b>${k}</b><span class="mod">${sg(mod(f.stats?.[k]))}</span><span class="val">${esc(f.stats?.[k] ?? 10)}</span></div>`).join("")}
+      ${STATS.map((k) => `<div class="stat"><b>${k}</b><span class="mod ${canEdit ? "roll" : ""}" data-roll="${sg(mod(f.stats?.[k]))}" data-label="Prueba de ${k}">${sg(mod(f.stats?.[k]))}</span><span class="val">${esc(f.stats?.[k] ?? 10)}</span></div>`).join("")}
     </div>
 
-    ${f.detalles ? `<div class="details">${md(f.detalles)}</div>` : ""}
+    <details class="sec" open>
+      <summary>Estados</summary>
+      ${estados}
+    </details>
 
-    ${(f.secciones || []).filter((s) => s.md && s.md.trim()).map((s, i) => `
+    ${f.recursos.length || canEdit ? `<details class="sec" open><summary>Recursos y descansos</summary>${recursos}</details>` : ""}
+
+    ${f.detalles ? `<div class="details rollable">${md(f.detalles)}</div>` : ""}
+
+    ${(f.secciones || []).filter((s) => s.md && s.md.trim()).map((s) => `
       <details class="sec" ${CLOSED.includes(s.t) ? "" : "open"}>
         <summary>${esc(s.t)}</summary>
-        <div class="md">${md(s.md)}</div>
+        <div class="md rollable">${md(s.md)}</div>
       </details>`).join("")}
 
     <details class="sec" open>
@@ -238,6 +284,14 @@ function renderSheet() {
         ? `<textarea id="notes" rows="4" placeholder="Anotaciones de la partida…">${esc(f.notas || "")}</textarea>`
         : `<div class="md">${md(f.notas || "") || '<p class="muted">Sin notas.</p>'}</div>`}
     </details>`;
+
+  if (canEdit) rollify();
+
+  const update = (fn) => {
+    const nf = clone(normalizeSheet(data.ficha));
+    fn(nf);
+    return save({ ...data, ficha: nf }).then(render);
+  };
 
   if (isGM) {
     $("owner").value = data.owner || "";
@@ -269,36 +323,196 @@ function renderSheet() {
       render();
     };
   }
-  if (canEdit) {
-    $("edit").onclick = () => { editing = true; draft = clone(f); render(); };
-    const n = () => Math.max(0, Math.floor(Number($("hp-n").value) || 0));
-    $("hp-dmg").onclick = () => {
-      let dmg = n();
-      const nf = clone(f);
-      const t = Number(nf.pgTemp) || 0;
-      const fromTemp = Math.min(t, dmg);
-      nf.pgTemp = t - fromTemp;
-      dmg -= fromTemp;
-      nf.pgActual = Math.max(0, (Number(nf.pgActual) || 0) - dmg);
-      save({ ...data, ficha: nf }).then(render);
+  if (!canEdit) return;
+
+  $("edit").onclick = () => { editing = true; draft = normalizeSheet(clone(f)); render(); };
+  const n = () => Math.max(0, Math.floor(Number($("hp-n").value) || 0));
+  $("hp-dmg").onclick = () => update((nf) => {
+    let dmg = n();
+    const t = Number(nf.pgTemp) || 0;
+    const fromTemp = Math.min(t, dmg);
+    nf.pgTemp = t - fromTemp;
+    dmg -= fromTemp;
+    nf.pgActual = Math.max(0, (Number(nf.pgActual) || 0) - dmg);
+    if (dmg > 0 && nf.estados.includes("concentrado")) {
+      OBR.notification.show(`🧠 ${nf.nombre} recibió daño: salvación de CON CD ${Math.max(10, Math.floor(dmg / 2))} para mantener la concentración.`, "WARNING");
+    }
+  });
+  $("hp-heal").onclick = () => update((nf) => { nf.pgActual = Math.min(Number(nf.pgMax) || 0, (Number(nf.pgActual) || 0) + n()); });
+  $("hp-temp").onclick = () => update((nf) => { nf.pgTemp = Math.max(Number(nf.pgTemp) || 0, n()); });
+
+  document.querySelectorAll("[data-est]").forEach((b) => {
+    b.onclick = () => update((nf) => {
+      const k = b.dataset.est;
+      nf.estados = nf.estados.includes(k) ? nf.estados.filter((x) => x !== k) : [...nf.estados, k];
+    });
+  });
+  $("ag-").onclick = () => update((nf) => { nf.agotamiento = Math.max(0, nf.agotamiento - 1); });
+  $("ag+").onclick = () => update((nf) => { nf.agotamiento = Math.min(6, nf.agotamiento + 1); });
+
+  document.querySelectorAll(".pip").forEach((b) => {
+    b.onclick = () => update((nf) => {
+      const r = nf.recursos[Number(b.dataset.rec)];
+      const left = Number(r.max) - (Number(r.usados) || 0);
+      const j = Number(b.dataset.j);
+      // Tocar un casillero lleno gasta uno; tocar uno vacío recupera uno.
+      const used = Number(r.usados) || 0;
+      r.usados = j < left ? Math.min(Number(r.max), used + 1) : Math.max(0, used - 1);
+    });
+  });
+  document.querySelectorAll("[data-pool]").forEach((b) => {
+    b.onclick = () => update((nf) => {
+      const r = nf.recursos[Number(b.dataset.pool)];
+      const left = Math.min(Number(r.max), Math.max(0, Number(r.max) - (Number(r.usados) || 0) + Number(b.dataset.d)));
+      r.usados = Number(r.max) - left;
+    });
+  });
+  document.querySelectorAll("[data-hd]").forEach((b) => {
+    b.onclick = () => {
+      const r = f.recursos[Number(b.dataset.hd)];
+      if ((Number(r.usados) || 0) >= Number(r.max)) {
+        OBR.notification.show("No te quedan dados de golpe.", "WARNING");
+        return;
+      }
+      const res = roll(`1${r.dado}${sg(mod(f.stats?.CON))}`);
+      const heal = Math.max(0, res.total);
+      announce(res, "Dado de golpe");
+      update((nf) => {
+        nf.recursos[Number(b.dataset.hd)].usados = (Number(nf.recursos[Number(b.dataset.hd)].usados) || 0) + 1;
+        nf.pgActual = Math.min(Number(nf.pgMax) || 0, (Number(nf.pgActual) || 0) + heal);
+      });
     };
-    $("hp-heal").onclick = () => {
-      const nf = clone(f);
-      nf.pgActual = Math.min(Number(nf.pgMax) || 0, (Number(nf.pgActual) || 0) + n());
-      save({ ...data, ficha: nf }).then(render);
-    };
-    $("hp-temp").onclick = () => {
-      const nf = clone(f);
-      nf.pgTemp = Math.max(Number(nf.pgTemp) || 0, n());
-      save({ ...data, ficha: nf }).then(render);
-    };
-    let t = null;
-    $("notes").oninput = (e) => {
-      clearTimeout(t);
-      const v = e.target.value;
-      t = setTimeout(() => save({ ...data, ficha: { ...data.ficha, notas: v } }), 600);
-    };
+  });
+  $("rest-short").onclick = () => update((nf) => {
+    for (const r of nf.recursos) if (r.rec === "corto") r.usados = 0;
+    OBR.notification.show(`☕ ${nf.nombre} hizo un descanso corto. Si quiere curarse, puede gastar dados de golpe.`, "INFO");
+  });
+  $("rest-long").onclick = () => update((nf) => {
+    nf.pgActual = Number(nf.pgMax) || 0;
+    nf.pgTemp = 0;
+    for (const r of nf.recursos) {
+      if (r.dado) r.usados = Math.max(0, (Number(r.usados) || 0) - Math.max(1, Math.floor(Number(r.max) / 2)));
+      else r.usados = 0;
+    }
+    nf.agotamiento = Math.max(0, nf.agotamiento - 1);
+    nf.estados = nf.estados.filter((k) => k !== "concentrado");
+    OBR.notification.show(`🌙 ${nf.nombre} hizo un descanso largo: PG al máximo y recursos recuperados.`, "SUCCESS");
+  });
+
+  document.querySelectorAll("#modo [data-m]").forEach((b) => {
+    b.onclick = () => { setRollMode(b.dataset.m); render(); };
+  });
+  if (isGM) $("vis").onclick = () => { setPublicRolls(!publicRolls()); render(); };
+  $("init").onclick = rollInitiative;
+
+  let t = null;
+  $("notes").oninput = (e) => {
+    clearTimeout(t);
+    const v = e.target.value;
+    t = setTimeout(() => save({ ...data, ficha: { ...data.ficha, notas: v } }), 600);
+  };
+}
+
+// ---------------- Tiradas ----------------
+
+function rollMode() {
+  try { return localStorage.getItem("fichas-modo") || "normal"; } catch { return "normal"; }
+}
+function setRollMode(m) {
+  try { localStorage.setItem("fichas-modo", m); } catch { /* nada */ }
+}
+function publicRolls() {
+  try { return localStorage.getItem("fichas-publicas") === "1"; } catch { return false; }
+}
+function setPublicRolls(v) {
+  try { localStorage.setItem("fichas-publicas", v ? "1" : "0"); } catch { /* nada */ }
+}
+
+/** Muestra la tirada: la de un jugador la ven todos; la del DM, según su elección. */
+function announce(res, que) {
+  const quien = data && data.ficha ? data.ficha.nombre : "Tirada";
+  const msg = rollMessage(res, quien, que);
+  if (!isGM || publicRolls()) {
+    OBR.broadcast.sendMessage(ROLL_CHANNEL, { msg }, { destination: "ALL" });
+  } else {
+    OBR.notification.show(`🙈 ${msg}`, "DEFAULT");
   }
+  const log = $("rolllog");
+  if (log) log.textContent = msg;
+}
+
+function doRoll(expr, label) {
+  const isD20 = /^[+−-]\d+$/.test(expr.replace(/\s/g, "")) || /^1?d20/.test(expr);
+  const res = roll(expr, isD20 ? rollMode() : "normal");
+  if (!res) return;
+  announce(res, label);
+}
+
+async function rollInitiative() {
+  const f = data.ficha;
+  const res = roll(sg(initBonus(f)), rollMode());
+  announce(res, "Iniciativa");
+  try {
+    await OBR.scene.items.updateItems([itemId], (items) => {
+      for (const it of items) {
+        const prev = it.metadata[INIT_KEY];
+        it.metadata[INIT_KEY] = { count: String(res.total), active: Boolean(prev && prev.active) };
+      }
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+/** Convierte los "+5" y "1d8+3" de la ficha en botones para tirar. */
+function rollify() {
+  const RE = /(\b\d*d\d+(?:\s?[+−-]\s?\d+)?\b)|((?<=^|[\s(·:,])[+−-]\d+\b)/g;
+  document.querySelectorAll(".rollable").forEach((root) => {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      const text = node.nodeValue;
+      RE.lastIndex = 0;
+      if (!RE.test(text)) continue;
+      RE.lastIndex = 0;
+      const frag = document.createDocumentFragment();
+      let last = 0;
+      let m;
+      while ((m = RE.exec(text))) {
+        frag.append(text.slice(last, m.index));
+        const span = document.createElement("span");
+        span.className = "roll";
+        span.textContent = m[0];
+        span.dataset.roll = m[0];
+        frag.append(span);
+        last = m.index + m[0].length;
+      }
+      frag.append(text.slice(last));
+      node.replaceWith(frag);
+    }
+  });
+}
+
+/** Busca un nombre para la tirada mirando el texto de antes (ej. "Sigilo", "Espada larga"). */
+function labelFor(el) {
+  if (el.dataset.label) return el.dataset.label;
+  const block = el.closest("li, p, .stat") || el.parentElement;
+  let before = "";
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (el.contains(n)) break;
+    before += n.nodeValue;
+  }
+  let seg = before.split(/[·•,;]/).pop().replace(/[\s(.:]+$/g, "").replace(/^[\s.:]+/, "").replace(/\d+\s*$/, "").trim();
+  const isDice = /d\d/.test(el.dataset.roll);
+  if (!/[a-záéíóúñ]/i.test(seg) || seg.length > 40) {
+    const b = block.querySelector("b");
+    seg = b ? b.textContent.replace(/[.:]+$/, "") : "";
+  }
+  if (isDice && seg) seg += " (daño)";
+  return seg;
 }
 
 /** Pide un segundo click para acciones que borran (sin diálogos del navegador). */
@@ -317,7 +531,7 @@ function confirmInline(id, text) {
 // ---------------- Editor ----------------
 
 function renderEditor() {
-  const f = draft;
+  const f = normalizeSheet(draft);
   const field = (k, label, type = "text") =>
     `<label class="fld"><span>${label}</span><input data-k="${k}" type="${type}" value="${esc(f[k] ?? "")}" /></label>`;
   $("app").innerHTML = `
@@ -357,6 +571,21 @@ function renderEditor() {
         </div>`).join("")}
     </div>
     <button id="add-sec">➕ Agregar sección</button>
+    <h3 class="sub-h">Recursos (espacios de conjuro, usos por descanso)</h3>
+    <div id="recs">
+      ${(f.recursos || []).map((r, i) => `
+        <div class="row rec-edit">
+          <input data-rc="${i}" data-f="n" value="${esc(r.n)}" placeholder="Nombre" />
+          <input data-rc="${i}" data-f="max" type="number" min="0" value="${esc(r.max)}" title="Máximo" />
+          <select data-rc="${i}" data-f="rec" title="Se recupera con">
+            <option value="largo" ${r.rec !== "corto" ? "selected" : ""}>Desc. largo</option>
+            <option value="corto" ${r.rec === "corto" ? "selected" : ""}>Desc. corto</option>
+          </select>
+          <input data-rc="${i}" data-f="dado" value="${esc(r.dado || "")}" placeholder="dado (d10)" title="Solo para dados de golpe" />
+          <button data-rdel="${i}" title="Borrar">✕</button>
+        </div>`).join("")}
+    </div>
+    <button id="add-rec">➕ Agregar recurso</button>
     <label class="fld"><span>Notas</span><textarea data-k="notas" rows="3">${esc(f.notas || "")}</textarea></label>
     <p class="hint">Formato: <b>**negrita**</b>, <i>*cursiva*</i> y listas empezando la línea con <b>* </b>.</p>`;
 
@@ -368,6 +597,13 @@ function renderEditor() {
     draft.stats ||= {};
     document.querySelectorAll("[data-stat]").forEach((el) => { draft.stats[el.dataset.stat] = Number(el.value) || 0; });
     document.querySelectorAll("[data-sec]").forEach((el) => { draft.secciones[Number(el.dataset.sec)][el.dataset.f] = el.value; });
+    document.querySelectorAll("[data-rc]").forEach((el) => {
+      const r = draft.recursos[Number(el.dataset.rc)];
+      if (el.dataset.f === "max") r.max = Math.max(0, Number(el.value) || 0);
+      else if (el.dataset.f === "dado") { if (el.value.trim()) r.dado = el.value.trim().toLowerCase().replace(/^1/, ""); else delete r.dado; }
+      else r[el.dataset.f] = el.value;
+      r.usados = Math.min(Number(r.usados) || 0, r.max);
+    });
   };
   $("cancel").onclick = () => { editing = false; draft = null; render(); };
   $("ok").onclick = async () => {
@@ -381,6 +617,10 @@ function renderEditor() {
     render();
   };
   $("add-sec").onclick = () => { sync(); draft.secciones.push({ t: "Nueva sección", md: "" }); renderEditor(); };
+  $("add-rec").onclick = () => { sync(); draft.recursos.push({ n: "Nuevo recurso", max: 1, usados: 0, rec: "largo" }); renderEditor(); };
+  document.querySelectorAll("[data-rdel]").forEach((b) => {
+    b.onclick = () => { sync(); draft.recursos.splice(Number(b.dataset.rdel), 1); renderEditor(); };
+  });
   document.querySelectorAll("[data-del]").forEach((b) => {
     b.onclick = () => { sync(); draft.secciones.splice(Number(b.dataset.del), 1); renderEditor(); };
   });
@@ -404,6 +644,10 @@ async function refreshItem() {
 
 OBR.onReady(async () => {
   $("close").onclick = () => OBR.modal.close(MODAL_ID);
+  $("app").addEventListener("click", (e) => {
+    const el = e.target.closest(".roll[data-roll]");
+    if (el && !el.classList.contains("demo")) doRoll(el.dataset.roll, labelFor(el));
+  });
   me = await OBR.player.getId();
   isGM = (await OBR.player.getRole()) === "GM";
   try { players = (await OBR.party.getPlayers()).filter((p) => p.role !== "GM"); } catch { players = []; }

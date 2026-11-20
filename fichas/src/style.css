@@ -119,3 +119,43 @@ body.modal { padding: 14px 16px 24px; }
 .sec-edit .row { margin: 0 0 6px; }
 .sec-edit .row input { flex: 1; font-weight: 600; }
 .pick { max-height: 520px; overflow-y: auto; }
+
+/* Tiradas */
+.roll { color: #ffd86b; font-weight: 700; cursor: pointer; border-bottom: 1px dashed rgba(255, 216, 107, .5); border-radius: 2px; }
+.roll:hover { background: rgba(255, 216, 107, .15); }
+.roll.demo { cursor: default; }
+.stat .mod.roll { border-bottom: none; color: var(--text); }
+.stat .mod.roll:hover { color: #ffd86b; background: none; }
+.rollbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--panel); border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+.seg { display: inline-flex; }
+.seg button { border-radius: 0; padding: 3px 7px; font-size: 12px; }
+.seg button:first-child { border-radius: 7px 0 0 7px; }
+.seg button:last-child { border-radius: 0 7px 7px 0; }
+.seg button.on { background: #5b4a8a; border-color: var(--accent); }
+.rollbar > button { padding: 3px 8px; font-size: 12px; }
+
+/* Estados */
+.estados { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0; }
+.est { padding: 2px 8px; font-size: 12px; border-radius: 99px; background: var(--panel2); color: var(--muted); }
+.est.on { background: #6b4a1a; border-color: #ffd86b; color: #ffe7a6; }
+.est:disabled { cursor: default; }
+.est:disabled:not(.on) { display: none; }
+.agot { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); margin-left: 4px; }
+.agot b { color: var(--text); min-width: 10px; text-align: center; }
+.mini { padding: 0 6px; font-size: 12px; line-height: 18px; }
+
+/* Recursos */
+.recursos { display: flex; flex-direction: column; gap: 5px; padding: 4px 0; }
+.rec { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+.rn { flex: 1; min-width: 150px; }
+.rn .muted { font-size: 11px; }
+.pips { display: inline-flex; gap: 3px; }
+.pip { width: 16px; height: 16px; padding: 0; border-radius: 50%; background: var(--panel2); border: 2px solid var(--accent); }
+.pip.full { background: var(--accent); }
+.pip:disabled { cursor: default; }
+.pool { display: inline-flex; align-items: center; gap: 5px; }
+.rests { margin-top: 4px; }
+.sub-h { margin-top: 8px; }
+.rec-edit input:first-child { flex: 1; }
+.rec-edit input[type="number"] { width: 60px; }
+.rec-edit input[placeholder^="dado"] { width: 90px; }
