@@ -102,7 +102,7 @@ class Channel {
     el.className = `channel ${this.id}`;
     el.innerHTML = `
       <h3>${this.icon} ${this.label}</h3>
-      <div class="player-wrap"><div id="yt-${this.id}"></div><div class="tap hidden">👆 Tocá el video una vez<br>para activar el sonido</div></div>
+      <div class="player-wrap"><div id="yt-${this.id}"></div><div class="cover"><div class="eq"><i></i><i></i><i></i><i></i><i></i></div></div><div class="tap hidden">👆 Tocá el video una vez<br>para activar el sonido</div></div>
       <div class="title">—</div>
       <div class="sub"></div>
       <div class="seek"><span class="t-cur">0:00</span><input type="range" min="0" max="100" step="1" value="0" disabled><span class="t-dur">0:00</span></div>
@@ -333,8 +333,18 @@ class Channel {
   render() {
     const s = this.state;
     this.el.querySelector('[data-a="shuffle"]').classList.toggle("on", Boolean(s && s.shuffle));
+    const playing = Boolean(s && s.id && !s.paused);
+    this.el.classList.toggle("playing", playing);
     if (!s || !s.id) {
       this.titleEl.textContent = "En silencio";
+      this.titleEl.title = "";
+      this.subEl.textContent = "";
+      return;
+    }
+    // Los jugadores no ven qué tema es: el soundtrack es "secreto".
+    if (!isGM) {
+      this.titleEl.textContent = s.paused ? "En pausa" : "Sonando…";
+      this.titleEl.title = "";
       this.subEl.textContent = "";
       return;
     }
@@ -467,6 +477,7 @@ class Channel {
     const prev = this.state;
     if (incoming && prev && incoming.rev === prev.rev) return; // es nuestro propio cambio
     this.state = incoming || null;
+    this.render();
     if (!this.ready) return;
     const s = this.state;
     if (s && s.id && sourceKey(s) === this.appliedKey) {
@@ -678,6 +689,8 @@ function bindUi() {
 }
 
 function applyRole() {
+  document.body.classList.toggle("player-view", !isGM);
+  Object.values(channels).forEach((c) => c.render && c.render());
   document.querySelectorAll(".gm-only").forEach((el) => el.classList.toggle("hidden", !isGM));
   if (!isGM) {
     $("gm-library").classList.add("hidden");

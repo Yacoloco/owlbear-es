@@ -112,3 +112,21 @@ html { color-scheme: dark; }
 }
 .player-wrap > .tap.hidden { display: none; }
 @keyframes tapPulse { 50% { background: rgba(60, 40, 110, .65); } }
+
+/* Vista de jugador: el video queda tapado para que no se sepa qué tema es.
+   La tapa deja pasar el click, así el primer toque igual le llega a YouTube. */
+.player-wrap > .cover { display: none; }
+body.player-view .player-wrap > .cover {
+  position: absolute; inset: 0; height: auto; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 60%, #2a2346 0%, #15131f 75%); pointer-events: none;
+}
+.player-wrap > .tap { z-index: 2; }
+.eq { display: flex; align-items: flex-end; gap: 5px; height: 40px; }
+.eq i { width: 6px; height: 8px; border-radius: 3px; background: var(--c, var(--accent)); opacity: .5; }
+.channel.ambiente .eq i { --c: var(--accent2); }
+.channel.playing .eq i { opacity: 1; animation: eqb 1.1s ease-in-out infinite; }
+.channel.playing .eq i:nth-child(2) { animation-delay: -.3s; animation-duration: .9s; }
+.channel.playing .eq i:nth-child(3) { animation-delay: -.6s; animation-duration: 1.3s; }
+.channel.playing .eq i:nth-child(4) { animation-delay: -.2s; animation-duration: 1s; }
+.channel.playing .eq i:nth-child(5) { animation-delay: -.8s; animation-duration: 1.2s; }
+@keyframes eqb { 0%, 100% { height: 8px; } 50% { height: 38px; } }
