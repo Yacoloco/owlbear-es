@@ -111,7 +111,7 @@ class Channel {
     el.className = `channel ${this.id}`;
     el.innerHTML = `
       <h3>${this.icon} ${this.label}</h3>
-      <div class="player-wrap"><div id="yt-${this.id}"></div><div class="cover"><div class="eq"><i></i><i></i><i></i><i></i><i></i></div></div><div class="tap hidden">👆 Tocá el video una vez<br>para activar el sonido</div></div>
+      <div class="player-wrap"><div id="yt-${this.id}"></div><div class="cover"><div class="eq"><i></i><i></i><i></i><i></i><i></i></div></div><div class="tap hidden"><div class="target">▶</div><div class="msg">Tocá el ▶ del medio<br>para activar el sonido</div></div><div class="shield s-top"></div><div class="shield s-bot"></div><div class="shield s-left"></div><div class="shield s-right"></div></div>
       <div class="title">—</div>
       <div class="sub"></div>
       <div class="seek"><span class="t-cur">0:00</span><input type="range" min="0" max="100" step="1" value="0" disabled><span class="t-dur">0:00</span></div>

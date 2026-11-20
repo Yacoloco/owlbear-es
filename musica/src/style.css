@@ -139,3 +139,24 @@ body.player-view .player-wrap > .cover {
 #l-list li.bad { border-left-color: #ff7a8a; }
 #l-list .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #l-list .st { color: var(--muted); flex: none; }
+
+/* Jugadores: un video debajo del otro, más grandes y fáciles de tocar */
+body.player-view .channels { grid-template-columns: 1fr; }
+
+/* Escudos invisibles: bloquean los bordes del video (título, logo y barra de YouTube,
+   que abren youtube.com) y dejan pasar el click solo en el centro. */
+.player-wrap > .shield { display: none; position: absolute; z-index: 3; background: transparent; }
+body.player-view .player-wrap > .shield, .player-wrap > .tap:not(.hidden) ~ .shield { display: block; }
+.player-wrap > .s-top { top: 0; left: 0; width: 100%; height: 28%; }
+.player-wrap > .s-bot { bottom: 0; left: 0; width: 100%; height: 28%; }
+.player-wrap > .s-left { top: 28%; left: 0; width: 30%; height: 44%; }
+.player-wrap > .s-right { top: 28%; right: 0; width: 30%; height: 44%; }
+
+.player-wrap > .tap { flex-direction: column; gap: 0; }
+.tap .target {
+  width: 40%; height: 44%; display: flex; align-items: center; justify-content: center;
+  border: 2px dashed #fff; border-radius: 10px; font-size: 26px; background: rgba(187, 153, 255, .25);
+}
+.tap .msg { position: absolute; bottom: 6%; left: 0; right: 0; font-size: 12px; }
+body.player-view .tap .msg { font-size: 14px; }
+.player-wrap:has(.tap:not(.hidden)) .eq { visibility: hidden; }
