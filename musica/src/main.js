@@ -17,7 +17,6 @@ const DRIFT_SECONDS = 4;
 
 let isGM = false;
 let library = [];
-let unlocked = false;
 const local = loadLocal();
 const channels = {};
 
@@ -103,7 +102,7 @@ class Channel {
     el.className = `channel ${this.id}`;
     el.innerHTML = `
       <h3>${this.icon} ${this.label}</h3>
-      <div class="player-wrap"><div id="yt-${this.id}"></div></div>
+      <div class="player-wrap"><div id="yt-${this.id}"></div><div class="tap hidden">👆 Tocá el video una vez<br>para activar el sonido</div></div>
       <div class="title">—</div>
       <div class="sub"></div>
       <div class="seek"><span class="t-cur">0:00</span><input type="range" min="0" max="100" step="1" value="0" disabled><span class="t-dur">0:00</span></div>
@@ -120,6 +119,8 @@ class Channel {
     this.titleEl = el.querySelector(".title");
     this.subEl = el.querySelector(".sub");
     this.gainEl = el.querySelector(".gain input");
+    this.tapEl = el.querySelector(".tap");
+    this.unlocked = false;
     this.seekEl = el.querySelector(".seek input");
     this.curEl = el.querySelector(".t-cur");
     this.durEl = el.querySelector(".t-dur");
@@ -248,7 +249,7 @@ class Channel {
     if (s.paused) {
       setTimeout(() => { try { this.player.pauseVideo(); } catch { /* nada */ } }, 400);
     } else {
-      setTimeout(() => this.checkBlocked(), 3500);
+      setTimeout(() => this.checkBlocked(), 1500);
     }
   }
 
@@ -256,7 +257,7 @@ class Channel {
     const s = this.state;
     if (!s || !s.id || s.paused || !this.ready) return;
     const ps = this.player.getPlayerState();
-    if (ps !== YTS().PLAYING && ps !== YTS().BUFFERING) showUnlock();
+    if (ps !== YTS().PLAYING && ps !== YTS().BUFFERING) this.showTap();
   }
 
   /** Corrección periódica de tema, pausa y posición. */
@@ -283,15 +284,15 @@ class Channel {
         this.player.seekTo(target, true);
       }
     } else if (ps === YTS().PAUSED || ps === YTS().CUED || ps === -1) {
-      if (unlocked) this.player.playVideo(); else showUnlock();
+      if (this.unlocked) this.player.playVideo(); else this.showTap();
     }
   }
 
   async onPlayerState(e) {
     this.render();
     if (e.data === YTS().PLAYING) {
-      unlocked = true;
-      hideUnlock();
+      this.unlocked = true;
+      this.hideTap();
     }
     const s = this.state;
     if (!s || !s.id) return;
@@ -352,10 +353,26 @@ class Channel {
     this.subEl.textContent = parts.join(" · ");
   }
 
+  /*
+   * El navegador no deja que un video empiece con sonido si nunca hiciste click
+   * adentro de ESE video. Por eso, la primera vez de cada sesión mostramos un aviso
+   * encima del video: el click atraviesa el aviso y le llega a YouTube.
+   */
+  showTap() {
+    if (this.unlocked) return;
+    this.tapEl.classList.remove("hidden");
+  }
+  hideTap() { this.tapEl.classList.add("hidden"); }
+
+  /** Intenta arrancar; si el navegador lo bloquea, aparece el aviso enseguida. */
+  tryPlay() {
+    try { this.player.playVideo(); } catch { /* nada */ }
+    setTimeout(() => this.checkBlocked(), 1200);
+  }
+
   // ----- Acciones del DM -----
 
   async gmPlaySource(parsed, name, index = 0) {
-    unlocked = true;
     const s = this.state || {};
     let ids = [];
     if (parsed.kind === "playlist") {
@@ -437,7 +454,7 @@ class Channel {
     if (!s || !s.id) return;
     if (s.paused) {
       await writeChannel(this.id, { paused: false, startedAt: Date.now() - (s.pausedAt || 0) * 1000 });
-      this.player.playVideo();
+      this.tryPlay();
     } else {
       await writeChannel(this.id, { paused: true, pausedAt: elapsed(s) });
       this.player.pauseVideo();
@@ -623,8 +640,6 @@ function renderLibrary() {
 
 // ---------------- General ----------------
 
-function showUnlock() { if (!unlocked) $("unlock").classList.remove("hidden"); }
-function hideUnlock() { $("unlock").classList.add("hidden"); }
 
 function applyLocalVolume() {
   $("mute").textContent = local.muted || local.volume === 0 ? "🔇" : "🔈";
@@ -640,20 +655,6 @@ function bindUi() {
     applyLocalVolume();
   });
   $("mute").onclick = () => { local.muted = !local.muted; saveLocal(); applyLocalVolume(); };
-  $("unlock").onclick = () => {
-    unlocked = true;
-    for (const ch of Object.values(channels)) {
-      if (ch.state && ch.state.id && !ch.state.paused) { try { ch.player.playVideo(); } catch { /* nada */ } }
-    }
-    setTimeout(() => {
-      const playing = Object.values(channels).some((ch) => {
-        try { const ps = ch.player.getPlayerState(); return ps === YTS().PLAYING || ps === YTS().BUFFERING; } catch { return false; }
-      });
-      if (playing) { hideUnlock(); Object.values(channels).forEach((c) => c.tick()); }
-      else $("unlock").textContent = "👆 Tocá el ▶ de cada video";
-    }, 1500);
-  };
-
   $("add-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const url = $("add-url").value.trim();
