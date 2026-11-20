@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fichas</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body class="popover">
+    <section id="mine">
+      <h3>Tu ficha</h3>
+      <ul id="mine-list" class="tokens"></ul>
+    </section>
+
+    <section id="scene" class="gm-only hidden">
+      <h3>Fichas en esta escena</h3>
+      <ul id="scene-list" class="tokens"></ul>
+      <p class="hint">Para darle una ficha a un token: click derecho sobre el token → <b>Ficha</b>.</p>
+    </section>
+
+    <section id="library" class="gm-only hidden">
+      <h3>Tu biblioteca <span id="lib-count" class="muted"></span></h3>
+      <div class="row">
+        <label class="btn">📥 Importar fichas<input id="import" type="file" accept=".json,application/json" hidden /></label>
+        <button id="export">📤 Exportar</button>
+      </div>
+      <input id="lib-filter" type="search" placeholder="Buscar…" />
+      <ul id="lib-list" class="lib"></ul>
+      <p class="hint">La biblioteca se guarda solo en este navegador. Los jugadores no la ven.</p>
+    </section>
+    <p class="hint ver">v1.0</p>
+    <script type="module" src="./src/popover.js"></script>
+  </body>
+</html>

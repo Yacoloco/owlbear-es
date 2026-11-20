@@ -1,0 +1,17 @@
+{
+  "name": "Fichas de personaje (ES)",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "Yacoloco",
+  "homepage_url": "https://github.com/Yacoloco/owlbear-es",
+  "description": "Fichas de PJ, PNJ y enemigos pegadas a los tokens. Cada jugador ve solo la suya; el DM ve todas.",
+  "icon": "/owlbear-es/fichas/icon.svg",
+  "action": {
+    "title": "Fichas",
+    "icon": "/owlbear-es/fichas/icon.svg",
+    "popover": "/owlbear-es/fichas/index.html?v=1.0",
+    "height": 600,
+    "width": 380
+  },
+  "background_url": "/owlbear-es/fichas/background.html?v=1.0"
+}
