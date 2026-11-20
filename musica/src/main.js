@@ -53,7 +53,7 @@ document.addEventListener("input", (e) => {
 setInterval(() => document.querySelectorAll('input[type="range"]').forEach(paintRange), 500);
 
 const elapsed = (s) => (s.paused ? s.pausedAt || 0 : Math.max(0, (Date.now() - s.startedAt) / 1000));
-const sourceKey = (s) => (s && s.id ? `${s.kind}:${s.id}:${s.index || 0}:${s.track || 0}` : "none");
+const sourceKey = (s) => (s && s.id ? `${s.kind}:${s.id}:${s.vid || ""}:${s.index || 0}:${s.track || 0}` : "none");
 
 async function writeChannel(chId, patch) {
   const meta = await OBR.room.getMetadata();
@@ -189,7 +189,10 @@ class Channel {
     if (ps !== YTS().PLAYING) return;
     const d = this.player.getDuration() || 0;
     const pos = this.player.getCurrentTime() || 0;
-    if (d > 3 && pos >= d - 0.6) this.player.seekTo(0, true);
+    if (d > 3 && pos >= d - 1) {
+      this.player.seekTo(0, true);
+      this.player.playVideo();
+    }
   }
 
   /** Segundo en el que debería estar el tema (con bucle). */
@@ -202,8 +205,16 @@ class Channel {
     return d > 1 ? t % d : t;
   }
 
-  index() { try { return this.player.getPlaylistIndex(); } catch { return -1; } }
-  length() { try { return (this.player.getPlaylist() || []).length; } catch { return 0; } }
+  /** Cantidad de temas de la playlist (la lista de ids viaja en el estado). */
+  length() { return (this.state && Array.isArray(this.state.ids) && this.state.ids.length) || 0; }
+
+  /** Video que hay que reproducir ahora. */
+  videoId() {
+    const s = this.state;
+    if (!s || !s.id) return null;
+    if (s.kind === "video") return s.id;
+    return s.vid || (Array.isArray(s.ids) ? s.ids[s.index || 0] : null);
+  }
 
   /** Lleva el reproductor al estado compartido. */
   apply(force = false) {
@@ -222,10 +233,15 @@ class Channel {
       this.applying = true;
       let start = Math.floor(elapsed(s));
       if (s.duration > 0) start = start % Math.floor(s.duration);
-      if (s.kind === "playlist") {
-        this.player.loadPlaylist({ list: s.id, listType: "playlist", index: s.index || 0, startSeconds: start });
-      } else {
-        this.player.loadVideoById({ videoId: s.id, startSeconds: start });
+      const vid = this.videoId();
+      if (vid) {
+        this.player.loadVideoById({ videoId: vid, startSeconds: start });
+      } else if (isGM && s.kind === "playlist") {
+        // Estado de una versión anterior (sin la lista de temas): la completamos.
+        getPlaylistIds(s.id).then((ids) => {
+          if (!ids.length) return;
+          writeChannel(this.id, { ids, vid: ids[s.index || 0] || ids[0] }).then(() => this.apply(true));
+        });
       }
       setTimeout(() => { this.applying = false; }, 3000);
     }
@@ -252,14 +268,11 @@ class Channel {
       if (ps === YTS().PLAYING) this.player.pauseVideo();
       return;
     }
-    if (s.kind === "playlist" && !isGM) {
-      const idx = this.index();
-      if (idx >= 0 && idx !== (s.index || 0)) {
-        this.applying = true;
-        this.player.playVideoAt(s.index || 0);
-        setTimeout(() => { this.applying = false; }, 3000);
-        return;
-      }
+    let loaded = null;
+    try { loaded = this.player.getVideoData().video_id; } catch { /* nada */ }
+    if (loaded && this.videoId() && loaded !== this.videoId()) {
+      this.apply(true);
+      return;
     }
     if (ps === YTS().PLAYING) {
       const duration = this.player.getDuration() || 0;
@@ -282,24 +295,16 @@ class Channel {
     }
     const s = this.state;
     if (!s || !s.id) return;
-    if (!isGM) {
-      if (e.data === YTS().ENDED) {
-        if (s.kind === "playlist") this.player.playVideoAt(s.index || 0);
-        else { this.player.seekTo(0, true); this.player.playVideo(); }
-      }
+    // Bucle: si igual llegó al final, vuelve a empezar el mismo tema (cada uno en su navegador).
+    if (e.data === YTS().ENDED) {
+      this.player.seekTo(0, true);
+      this.player.playVideo();
       return;
     }
-
-    // Los temas siempre quedan en bucle: si YouTube pasó solo al siguiente o terminó, vuelve a empezar el mismo.
-    if (e.data === YTS().PLAYING && !this.applying) {
+    if (isGM && e.data === YTS().PLAYING && !this.applying) {
       const d = Math.floor(this.player.getDuration() || 0);
       if (d > 0 && d !== s.duration) writeChannel(this.id, { duration: d });
     }
-    if (e.data === YTS().PLAYING && s.kind === "playlist" && !this.applying) {
-      const idx = this.index();
-      if (idx >= 0 && idx !== (s.index || 0)) await this.restart();
-    }
-    if (e.data === YTS().ENDED && !this.applying) await this.restart();
   }
 
   onPlayerError(e) {
@@ -339,7 +344,7 @@ class Channel {
     const parts = [];
     if (s.name) parts.push(s.name);
     if (s.kind === "playlist") {
-      const n = this.ready ? this.length() : 0;
+      const n = this.length();
       parts.push(n ? `${(s.index || 0) + 1}/${n}` : "lista");
     }
     parts.push("🔁");
@@ -352,8 +357,18 @@ class Channel {
   async gmPlaySource(parsed, name, index = 0) {
     unlocked = true;
     const s = this.state || {};
+    let ids = [];
+    if (parsed.kind === "playlist") {
+      ids = await getPlaylistIds(parsed.id);
+      if (!ids.length) {
+        OBR.notification.show(`${this.icon} No pude leer esa playlist. ¿Es pública u oculta?`, "ERROR");
+        return;
+      }
+      if (index === 0 && parsed.video && ids.includes(parsed.video)) index = ids.indexOf(parsed.video);
+    }
     await writeChannel(this.id, {
       kind: parsed.kind, id: parsed.id, name: name || "", index, track: (s.track || 0) + 1, duration: 0,
+      ids: parsed.kind === "playlist" ? ids : null, vid: parsed.kind === "playlist" ? ids[index] : parsed.id,
       startedAt: Date.now(), paused: false, pausedAt: 0,
     });
     this.apply(true);
@@ -362,7 +377,8 @@ class Channel {
 
   async gmPlayIndex(index) {
     const s = this.state || {};
-    await writeChannel(this.id, { index, track: (s.track || 0) + 1, duration: 0, startedAt: Date.now(), paused: false, pausedAt: 0 });
+    const vid = Array.isArray(s.ids) ? s.ids[index] : s.vid;
+    await writeChannel(this.id, { index, vid, track: (s.track || 0) + 1, duration: 0, startedAt: Date.now(), paused: false, pausedAt: 0 });
     this.apply(true);
     renderTracks();
   }
@@ -481,6 +497,25 @@ function fetchTitle(videoId) {
   return p;
 }
 
+const idsCache = new Map();
+async function getPlaylistIds(listId) {
+  if (idsCache.has(listId)) return idsCache.get(listId);
+  const ex = await getExplorer();
+  const ids = await new Promise((resolve) => {
+    let tries = 0;
+    ex.cuePlaylist({ list: listId, listType: "playlist" });
+    const t = setInterval(() => {
+      tries++;
+      let list = null;
+      try { list = ex.getPlaylist(); } catch { /* todavía no */ }
+      if (list && list.length) { clearInterval(t); resolve(list); }
+      else if (tries > 30) { clearInterval(t); resolve([]); }
+    }, 300);
+  });
+  if (ids.length) idsCache.set(listId, ids);
+  return ids;
+}
+
 async function openBrowser(item) {
   const parsed = parseYouTube(item.url);
   if (!parsed || parsed.kind !== "playlist") return;
@@ -492,18 +527,7 @@ async function openBrowser(item) {
   $("browser-status").textContent = "Cargando temas…";
   browsing = { item, parsed, ids: [] };
 
-  const ex = await getExplorer();
-  const ids = await new Promise((resolve) => {
-    let tries = 0;
-    ex.cuePlaylist({ list: parsed.id, listType: "playlist" });
-    const t = setInterval(() => {
-      tries++;
-      let list = null;
-      try { list = ex.getPlaylist(); } catch { /* todavía no */ }
-      if (list && list.length) { clearInterval(t); resolve(list); }
-      else if (tries > 30) { clearInterval(t); resolve([]); }
-    }, 300);
-  });
+  const ids = await getPlaylistIds(parsed.id);
   if (!browsing || browsing.parsed.id !== parsed.id) return;
   browsing.ids = ids;
   $("browser-status").textContent = ids.length

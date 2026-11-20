@@ -1,6 +1,6 @@
 {
   "name": "Música de YouTube (ES)",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "manifest_version": 1,
   "author": "Yacoloco",
   "homepage_url": "https://github.com/Yacoloco/owlbear-es",
@@ -9,9 +9,9 @@
   "action": {
     "title": "Música",
     "icon": "/owlbear-es/musica/icon.svg",
-    "popover": "/owlbear-es/musica/index.html",
+    "popover": "/owlbear-es/musica/index.html?v=2.3",
     "height": 640,
     "width": 430
   },
-  "background_url": "/owlbear-es/musica/background.html"
+  "background_url": "/owlbear-es/musica/background.html?v=2.3"
 }
