@@ -40,6 +40,18 @@ const fmt = (sec) => {
   return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 };
 
+/** Pinta la parte "llena" de un slider (variable CSS --p). */
+function paintRange(el) {
+  const min = Number(el.min) || 0;
+  const max = Number(el.max) || 100;
+  const p = max > min ? ((Number(el.value) - min) / (max - min)) * 100 : 0;
+  el.style.setProperty("--p", `${Math.max(0, Math.min(100, p))}%`);
+}
+document.addEventListener("input", (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.type === "range") paintRange(e.target);
+});
+setInterval(() => document.querySelectorAll('input[type="range"]').forEach(paintRange), 500);
+
 const elapsed = (s) => (s.paused ? s.pausedAt || 0 : Math.max(0, (Date.now() - s.startedAt) / 1000));
 const sourceKey = (s) => (s && s.id ? `${s.kind}:${s.id}:${s.index || 0}:${s.track || 0}` : "none");
 
@@ -163,6 +175,21 @@ class Channel {
     this.player.setVolume(Math.round((local.volume * gain) / 100));
     if (local.muted) this.player.mute(); else this.player.unMute();
     if (document.activeElement !== this.gainEl) this.gainEl.value = gain;
+  }
+
+  /**
+   * Bucle sin cortes: un instante antes de que termine el tema volvemos a 0:00,
+   * así YouTube nunca llega a pasar al tema siguiente de la playlist.
+   */
+  guardLoop() {
+    const s = this.state;
+    if (!this.ready || !s || !s.id || s.paused) return;
+    let ps;
+    try { ps = this.player.getPlayerState(); } catch { return; }
+    if (ps !== YTS().PLAYING) return;
+    const d = this.player.getDuration() || 0;
+    const pos = this.player.getCurrentTime() || 0;
+    if (d > 3 && pos >= d - 0.6) this.player.seekTo(0, true);
   }
 
   /** Segundo en el que debería estar el tema (con bucle). */
@@ -669,4 +696,5 @@ OBR.onReady(async () => {
   setInterval(() => Object.values(channels).forEach((c) => c.tick()), 3000);
   setInterval(() => Object.values(channels).forEach((c) => c.render()), 4000);
   setInterval(() => Object.values(channels).forEach((c) => c.updateSeek()), 1000);
+  setInterval(() => Object.values(channels).forEach((c) => c.guardLoop()), 200);
 });
