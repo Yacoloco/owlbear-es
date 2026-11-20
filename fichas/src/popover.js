@@ -2,6 +2,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import {
   KEY, MODAL_ID, BASE, VERSION, TIPOS, $, esc,
   loadLibrary, saveLibrary, mergeIntoLibrary, parseImport, sortSheets,
+  loadLinks, removeLink,
 } from "./shared.js";
 
 let isGM = false;
@@ -43,8 +44,22 @@ function render() {
       ? tokens.map((it) => tokenRow(it, true)).join("")
       : `<li class="empty muted">Ningún token de esta escena tiene ficha todavía.</li>`;
     renderLibrary();
+    renderLinks();
   }
   document.querySelectorAll(".tokens li[data-id]").forEach((li) => { li.onclick = () => openSheet(li.dataset.id); });
+}
+
+function renderLinks() {
+  const links = Object.entries(loadLinks()).sort((a, b) => a[0].localeCompare(b[0], "es"));
+  $("links-list").innerHTML = links.length
+    ? links.map(([n, l]) => `
+      <li><span class="tag ${esc(l.tipo)}">${TIPOS[l.tipo] || ""}</span>
+        <span class="nm"><b>${esc(n)}</b> <span class="muted">→ ${esc(l.data.ficha.nombre)}</span></span>
+        <button data-unlink="${esc(n)}" title="Dejar de ponerla sola">✕</button></li>`).join("")
+    : `<li class="empty muted">Todavía ninguna. Se crean solas cuando le ponés una ficha a un token.</li>`;
+  document.querySelectorAll("[data-unlink]").forEach((b) => {
+    b.onclick = () => { removeLink(b.dataset.unlink, true); renderLinks(); };
+  });
 }
 
 function renderLibrary() {
@@ -116,7 +131,7 @@ OBR.onReady(async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
   $("lib-filter").oninput = (e) => { libFilter = e.target.value; renderLibrary(); };
-  window.addEventListener("storage", () => isGM && renderLibrary());
+  window.addEventListener("storage", () => { if (isGM) { renderLibrary(); renderLinks(); } });
 
   await loadTokens();
   OBR.scene.items.onChange(loadTokens);

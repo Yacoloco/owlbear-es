@@ -1,5 +1,5 @@
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, KEY, MODAL_ID, BASE, VERSION } from "./shared.js";
+import { ID, KEY, MODAL_ID, BASE, VERSION, syncScene } from "./shared.js";
 
 function openSheet(itemId) {
   OBR.modal.open({
@@ -42,4 +42,29 @@ OBR.onReady(async () => {
       if (context.items[0]) openSheet(context.items[0].id);
     },
   });
+
+  // Fichas automáticas por nombre: las pone el navegador del DM, en cada escena que abre.
+  let timer = null;
+  let running = false;
+  let again = false;
+  const schedule = () => {
+    clearTimeout(timer);
+    timer = setTimeout(run, 400);
+  };
+  async function run() {
+    if (running) { again = true; return; }
+    if ((await OBR.player.getRole()) !== "GM") return;
+    running = true;
+    try {
+      await syncScene(OBR, KEY);
+    } catch (e) {
+      console.error("fichas: sync", e);
+    }
+    running = false;
+    if (again) { again = false; schedule(); }
+  }
+  OBR.scene.onReadyChange((ready) => { if (ready) schedule(); });
+  OBR.scene.items.onChange(schedule);
+  window.addEventListener("storage", schedule);
+  schedule();
 });

@@ -2,6 +2,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import {
   KEY, MODAL_ID, STATS, TIPOS, mod, sg, $, esc, md, blankSheet,
   loadLibrary, mergeIntoLibrary, parseImport, sortSheets,
+  normName, setLink, removeLink, copyFromLink, isToken, updateLinkTemplate,
 } from "./shared.js";
 
 const itemId = new URLSearchParams(location.search).get("item");
@@ -23,6 +24,8 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 // ---------------- Guardado ----------------
 
 async function save(next) {
+  // Cada cambio sube la versión: así la ficha del PJ se copia a sus otros tokens.
+  if (next) next = { ...next, rev: ((data && data.rev) || 0) + 1 };
   data = next;
   try {
     await OBR.scene.items.updateItems([itemId], (items) => {
@@ -119,7 +122,23 @@ function guessOwner(ficha) {
 async function assignSheet(ficha, keepEditing = false) {
   const owner = guessOwner(ficha);
   ficha.pgActual = ficha.pgActual ?? ficha.pgMax;
-  await save({ owner: owner ? owner.id : null, ownerName: owner ? owner.name : "", ficha });
+  const base = { owner: owner ? owner.id : null, ownerName: owner ? owner.name : "", ficha };
+  // Desde ahora, todos los tokens que se llamen igual tienen esta ficha (en todas las escenas).
+  const link = setLink(item.name, base);
+  if (link) {
+    const same = (await OBR.scene.items.getItems()).filter((it) => isToken(it) && normName(it.name) === normName(item.name));
+    const ids = same.map((it) => it.id);
+    if (!ids.includes(itemId)) ids.push(itemId);
+    try {
+      await OBR.scene.items.updateItems(ids, (list) => {
+        for (const it of list) it.metadata[KEY] = copyFromLink(link);
+      });
+    } catch (e) { console.error(e); }
+    data = copyFromLink(link);
+    if (ids.length > 1) OBR.notification.show(`📜 Ficha puesta en los ${ids.length} tokens "${item.name}". Los que agregues con ese nombre la van a tener solos.`, "SUCCESS");
+  } else {
+    await save(base);
+  }
   editing = keepEditing;
   if (keepEditing) draft = clone(ficha);
   render();
@@ -167,7 +186,7 @@ function renderSheet() {
       <span class="sp"></span>
       <button id="to-lib" title="Guardar una copia en tu biblioteca">💾</button>
       <button id="change" title="Cambiar por otra ficha">🔁</button>
-      <button id="remove" title="Quitarle la ficha al token">🗑</button>
+      <button id="remove" title="Quitarle la ficha a todos los tokens con este nombre">🗑</button>
     </div>` : "";
 
   $("app").innerHTML = `
@@ -233,12 +252,20 @@ function renderSheet() {
     };
     $("change").onclick = async () => {
       if (!confirmInline("change", "¿Cambiar? Se pierden los cambios")) return;
+      removeLink(item.name, true);
       await save(null);
       render();
     };
     $("remove").onclick = async () => {
-      if (!confirmInline("remove", "¿Quitar ficha?")) return;
-      await save(null);
+      if (!confirmInline("remove", "¿Quitar a todos?")) return;
+      // Se la saca a todos los tokens con este nombre y deja de ponerla sola.
+      removeLink(item.name, true);
+      const same = (await OBR.scene.items.getItems()).filter((it) => isToken(it) && normName(it.name) === normName(item.name)).map((it) => it.id);
+      if (!same.includes(itemId)) same.push(itemId);
+      try {
+        await OBR.scene.items.updateItems(same, (list) => { for (const it of list) delete it.metadata[KEY]; });
+      } catch (e) { console.error(e); }
+      data = null;
       render();
     };
   }
@@ -347,6 +374,8 @@ function renderEditor() {
     sync();
     draft.pgActual = Math.min(Number(draft.pgActual) || 0, Number(draft.pgMax) || 0);
     await save({ ...data, ficha: draft });
+    // Si el DM corrige un enemigo, los próximos tokens con ese nombre salen con la corrección.
+    if (isGM && draft.tipo !== "pj") updateLinkTemplate(item.name, data);
     editing = false;
     draft = null;
     render();
