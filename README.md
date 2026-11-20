@@ -6,4 +6,6 @@ Traducciones al español de tres extensiones de código abierto para Owlbear Rod
 - `iniciativa/` — [Initiative Tracker](https://github.com/owlbear-rodeo/initiative-tracker) de Owlbear Rodeo (GPL-3.0)
 - `dados/` — [Dice](https://github.com/owlbear-rodeo/dice) de Owlbear Rodeo (GPL-3.0)
 
-Cada carpeta conserva la licencia GPL-3.0 original. GitHub Actions construye y publica todo en GitHub Pages.
+- `musica/` — reproductor de playlists de YouTube sincronizado para toda la sala (propio)
+
+Cada carpeta traducida conserva la licencia GPL-3.0 original. GitHub Actions construye y publica todo en GitHub Pages.

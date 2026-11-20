@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Música</title>
+    <link rel="stylesheet" href="./src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section class="now">
+        <div id="player-wrap"><div id="yt"></div></div>
+        <div class="now-info">
+          <div class="label">Sonando</div>
+          <div id="now-title" class="title">Nada por ahora</div>
+          <div id="now-sub" class="sub"></div>
+        </div>
+        <button id="unlock" class="unlock hidden" title="El navegador bloqueó el audio automático">🔊 Activar sonido</button>
+      </section>
+
+      <section id="gm-controls" class="controls hidden">
+        <button id="prev" title="Anterior">⏮</button>
+        <button id="playpause" title="Pausa / Reproducir">⏯</button>
+        <button id="next" title="Siguiente">⏭</button>
+        <button id="shuffle" class="toggle" title="Aleatorio">🔀</button>
+        <button id="stop" title="Parar para todos">⏹</button>
+      </section>
+
+      <section class="volume">
+        <button id="mute" title="Silenciar solo para mí">🔈</button>
+        <input id="vol" type="range" min="0" max="100" value="60" />
+        <span class="hint">Volumen solo para vos</span>
+      </section>
+
+      <section id="gm-library" class="library hidden">
+        <form id="add-form">
+          <input id="add-url" type="text" placeholder="Link de playlist o video de YouTube" required />
+          <input id="add-name" type="text" placeholder="Nombre (ej: Taberna, Combate…)" />
+          <div class="row">
+            <button type="submit">➕ Guardar</button>
+            <button type="button" id="play-now">▶ Poner ya</button>
+          </div>
+        </form>
+        <ul id="list"></ul>
+        <p class="hint">Las playlists tienen que ser <b>públicas</b> u <b>ocultas</b> (no privadas). Las listas "Mix" automáticas de YouTube no funcionan.</p>
+      </section>
+
+      <section id="player-note" class="hint hidden">
+        La música la elige el DM. Podés cerrar esta ventana: sigue sonando.
+      </section>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
