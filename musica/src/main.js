@@ -14,6 +14,10 @@ import { ID, STATE_KEY, LIBRARY_KEY, CHANNELS, parseYouTube } from "./shared.js"
 const $ = (id) => document.getElementById(id);
 const LOCAL_KEY = `${ID}/local`;
 const DRIFT_SECONDS = 4;
+// Fundidos (milisegundos): solo al pausar o al cambiar de tema con algo ya sonando.
+const FADE_CHANGE_OUT = 2500;
+const FADE_CHANGE_IN = 1500;
+const FADE_PAUSE = 2000;
 
 let isGM = false;
 let library = [];
@@ -93,6 +97,11 @@ class Channel {
     this.player = null;
     this.ready = false;
     this.applying = false;
+    this.fade = 1;          // multiplicador del volumen durante un fundido
+    this.fading = false;    // hay un fundido de salida en curso
+    this.fadeSeq = 0;       // para cancelar fundidos viejos
+    this.fadeTimer = null;
+    this.fadeInPending = false;
     this.appliedKey = null;
     this.buildUi();
   }
@@ -173,10 +182,63 @@ class Channel {
   applyVolume() {
     if (!this.ready) return;
     const gain = this.state && typeof this.state.gain === "number" ? this.state.gain : 100;
-    this.player.setVolume(Math.round((local.volume * gain) / 100));
+    this.player.setVolume(Math.round((local.volume * gain * this.fade) / 100));
     if (local.muted) this.player.mute(); else this.player.unMute();
     if (document.activeElement !== this.gainEl) this.gainEl.value = gain;
   }
+
+  // ----- Fundidos -----
+
+  /** ¿Se está escuchando algo ahora mismo en este canal? */
+  isAudible() {
+    if (!this.ready || !this.appliedKey || this.appliedKey === "none" || this.fade <= 0.01) return false;
+    try { return this.player.getPlayerState() === YTS().PLAYING; } catch { return false; }
+  }
+
+  /** Lleva el volumen del fundido hasta `to` en `ms` milisegundos. */
+  rampTo(to, ms) {
+    clearInterval(this.fadeTimer);
+    const from = this.fade;
+    const t0 = Date.now();
+    return new Promise((resolve) => {
+      this.fadeTimer = setInterval(() => {
+        const k = Math.min(1, (Date.now() - t0) / ms);
+        this.fade = from + (to - from) * k;
+        this.applyVolume();
+        if (k >= 1) { clearInterval(this.fadeTimer); this.fadeTimer = null; resolve(); }
+      }, 50);
+    });
+  }
+
+  /** Corta cualquier fundido y deja el volumen normal (sin fade in). */
+  cancelFade() {
+    this.fadeSeq++;
+    clearInterval(this.fadeTimer);
+    this.fadeTimer = null;
+    this.fading = false;
+    this.fadeInPending = false;
+    if (this.fade !== 1) { this.fade = 1; this.applyVolume(); }
+  }
+
+  /** Pausa con fundido de salida (si no estaba sonando, pausa directo). */
+  async fadePause() {
+    if (!this.isAudible()) {
+      this.cancelFade();
+      try { this.player.pauseVideo(); } catch { /* nada */ }
+      return;
+    }
+    const seq = ++this.fadeSeq;
+    this.fading = true;
+    await this.rampTo(0, FADE_PAUSE);
+    if (seq !== this.fadeSeq) return;
+    this.fading = false;
+    if (this.state && this.state.paused) { try { this.player.pauseVideo(); } catch { /* nada */ } }
+    this.fade = 1;            // al retomar arranca con volumen normal
+    this.applyVolume();
+  }
+
+  /** Momento de arranque de un tema nuevo: si hay que fundir, empieza cuando termina el fundido. */
+  startAt() { return Date.now() + (this.isAudible() ? FADE_CHANGE_OUT : 0); }
 
   /**
    * Bucle sin cortes: un instante antes de que termine el tema volvemos a 0:00,
@@ -225,11 +287,26 @@ class Channel {
     const s = this.state;
     if (!s || !s.id) {
       this.appliedKey = "none";
+      this.cancelFade();
       try { this.player.stopVideo(); } catch { /* nada */ }
       return;
     }
     const key = sourceKey(s);
+    if ((force || key !== this.appliedKey) && !s.paused && this.isAudible()) {
+      // Cambio de tema con algo sonando: fundido de salida, después el tema nuevo.
+      this.appliedKey = key;
+      const seq = ++this.fadeSeq;
+      this.fading = true;
+      this.rampTo(0, FADE_CHANGE_OUT).then(() => {
+        if (seq !== this.fadeSeq) return;
+        this.fading = false;
+        this.fadeInPending = true;
+        this.apply(true);
+      });
+      return;
+    }
     if (force || key !== this.appliedKey) {
+      if (!this.fadeInPending) this.cancelFade();
       this.appliedKey = key;
       this.applying = true;
       let start = Math.floor(elapsed(s));
@@ -237,6 +314,15 @@ class Channel {
       const vid = this.videoId();
       if (vid) {
         this.player.loadVideoById({ videoId: vid, startSeconds: start });
+        if (this.fadeInPending) {
+          // Si por algo no arranca (por ejemplo, el navegador lo bloquea), no dejarlo en silencio.
+          setTimeout(() => {
+            if (!this.fadeInPending) return;
+            this.fadeInPending = false;
+            this.fade = 1;
+            this.applyVolume();
+          }, 6000);
+        }
       } else if (isGM && s.kind === "playlist") {
         // Estado de una versión anterior (sin la lista de temas): la completamos.
         getPlaylistIds(s.id).then((ids) => {
@@ -263,7 +349,7 @@ class Channel {
   /** Corrección periódica de tema, pausa y posición. */
   tick() {
     const s = this.state;
-    if (!this.ready || !s || !s.id || this.applying) return;
+    if (!this.ready || !s || !s.id || this.applying || this.fading || this.fadeInPending) return;
     const ps = this.player.getPlayerState();
     if (s.paused) {
       if (ps === YTS().PLAYING) this.player.pauseVideo();
@@ -293,6 +379,11 @@ class Channel {
     if (e.data === YTS().PLAYING) {
       this.unlocked = true;
       this.hideTap();
+      if (this.fadeInPending) {
+        this.fadeInPending = false;
+        const seq = this.fadeSeq;
+        this.rampTo(1, FADE_CHANGE_IN).then(() => { if (seq !== this.fadeSeq) return; });
+      }
     }
     const s = this.state;
     if (!s || !s.id) return;
@@ -396,7 +487,7 @@ class Channel {
     await writeChannel(this.id, {
       kind: parsed.kind, id: parsed.id, name: name || "", index, track: (s.track || 0) + 1, duration: 0,
       ids: parsed.kind === "playlist" ? ids : null, vid: parsed.kind === "playlist" ? ids[index] : parsed.id,
-      startedAt: Date.now(), paused: false, pausedAt: 0,
+      startedAt: this.startAt(), paused: false, pausedAt: 0,
     });
     this.apply(true);
     renderLibrary();
@@ -405,14 +496,14 @@ class Channel {
   async gmPlayIndex(index) {
     const s = this.state || {};
     const vid = Array.isArray(s.ids) ? s.ids[index] : s.vid;
-    await writeChannel(this.id, { index, vid, track: (s.track || 0) + 1, duration: 0, startedAt: Date.now(), paused: false, pausedAt: 0 });
+    await writeChannel(this.id, { index, vid, track: (s.track || 0) + 1, duration: 0, startedAt: this.startAt(), paused: false, pausedAt: 0 });
     this.apply(true);
     renderTracks();
   }
 
   async restart() {
     const s = this.state || {};
-    await writeChannel(this.id, { track: (s.track || 0) + 1, startedAt: Date.now(), paused: false, pausedAt: 0 });
+    await writeChannel(this.id, { track: (s.track || 0) + 1, startedAt: this.startAt(), paused: false, pausedAt: 0 });
     this.apply(true);
   }
 
@@ -463,11 +554,14 @@ class Channel {
     const s = this.state;
     if (!s || !s.id) return;
     if (s.paused) {
+      this.cancelFade();
       await writeChannel(this.id, { paused: false, startedAt: Date.now() - (s.pausedAt || 0) * 1000 });
       this.tryPlay();
     } else {
-      await writeChannel(this.id, { paused: true, pausedAt: elapsed(s) });
-      this.player.pauseVideo();
+      // Se guarda el punto donde termina el fundido, así al retomar sigue desde ahí.
+      const extra = this.isAudible() ? FADE_PAUSE / 1000 : 0;
+      await writeChannel(this.id, { paused: true, pausedAt: elapsed(s) + extra });
+      this.fadePause();
     }
     this.render();
   }
@@ -482,8 +576,8 @@ class Channel {
     const s = this.state;
     if (s && s.id && sourceKey(s) === this.appliedKey) {
       // Mismo tema: solo cambió la pausa, la mezcla o el aleatorio.
-      if (s.paused && !(prev && prev.paused)) this.player.pauseVideo();
-      if (!s.paused && prev && prev.paused) { this.player.seekTo(this.target(), true); this.player.playVideo(); }
+      if (s.paused && !(prev && prev.paused)) this.fadePause();
+      if (!s.paused && prev && prev.paused) { this.cancelFade(); this.player.seekTo(this.target(), true); this.player.playVideo(); }
       if (s.paused && prev && prev.paused && s.pausedAt !== prev.pausedAt) this.player.seekTo(s.pausedAt || 0, true);
       if (!s.paused && prev && !prev.paused && s.startedAt !== prev.startedAt) this.player.seekTo(this.target(), true);
       this.applyVolume();
