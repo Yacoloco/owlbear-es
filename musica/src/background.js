@@ -1,18 +1,18 @@
 import OBR from "@owlbear-rodeo/sdk";
 import { STATE_KEY } from "./shared.js";
 
-// Pone un ♪ en el ícono mientras suena música y avisa a los jugadores
+// Pone un ♪ en el ícono mientras suena algo y avisa a los jugadores
 // que todavía no abrieron el reproductor en esta pestaña.
 OBR.onReady(() => {
   let lastKey = null;
 
   async function check(metadata) {
-    const state = metadata[STATE_KEY];
-    const playing = Boolean(state && state.id && !state.paused);
-    await OBR.action.setBadgeText(playing ? "♪" : undefined);
-    if (!playing) return;
+    const chans = (metadata[STATE_KEY] && metadata[STATE_KEY].channels) || {};
+    const active = Object.entries(chans).filter(([, s]) => s && s.id && !s.paused);
+    await OBR.action.setBadgeText(active.length ? "♪" : undefined);
+    if (!active.length) return;
 
-    const key = `${state.kind}:${state.id}:${state.rev}`;
+    const key = active.map(([id, s]) => `${id}:${s.kind}:${s.id}`).join("|");
     if (key === lastKey) return;
     lastKey = key;
 

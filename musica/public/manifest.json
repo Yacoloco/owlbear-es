@@ -1,17 +1,17 @@
 {
   "name": "Música de YouTube (ES)",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "manifest_version": 1,
   "author": "Yacoloco",
   "homepage_url": "https://github.com/Yacoloco/owlbear-es",
-  "description": "El DM pone playlists o videos de YouTube y todos los escuchan sincronizados.",
+  "description": "Playlists y videos de YouTube en dos canales (Música y Ambiente), sincronizados para toda la sala.",
   "icon": "/owlbear-es/musica/icon.svg",
   "action": {
     "title": "Música",
     "icon": "/owlbear-es/musica/icon.svg",
     "popover": "/owlbear-es/musica/index.html",
-    "height": 560,
-    "width": 360
+    "height": 640,
+    "width": 430
   },
   "background_url": "/owlbear-es/musica/background.html"
 }

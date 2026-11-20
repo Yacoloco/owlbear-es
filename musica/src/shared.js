@@ -32,3 +32,8 @@ export function parseYouTube(input) {
   if (video) return { kind: "video", id: video };
   return null;
 }
+
+export const CHANNELS = [
+  { id: "musica", label: "Música", icon: "🎵" },
+  { id: "ambiente", label: "Ambiente", icon: "🌧️" },
+];
