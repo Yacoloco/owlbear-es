@@ -782,7 +782,84 @@ function bindUi() {
   $("browser-filter").addEventListener("input", renderTracks);
 }
 
+// ---------------- Quién escucha ----------------
+// Cada jugador publica en su metadata de jugador cómo le está sonando el addon.
+// El DM lee la lista de la sala y muestra quién escucha y a quién le falta algo.
+
+const PRESENCE_KEY = `${ID}/oyente`;
+const PRESENCE_HEARTBEAT = 15000;   // cada cuánto se avisa "sigo acá" aunque nada cambie
+const PRESENCE_STALE = 40000;       // sin noticias en este tiempo = cerró el addon
+let presenceSent = { s: "", at: 0 };
+const presenceSeen = new Map();     // id -> { t, seenAt }
+let partyPlayers = [];
+
+function myStatus() {
+  if (local.muted || local.volume === 0) return "muted";
+  const active = Object.values(channels).filter((c) => c.state && c.state.id && !c.state.paused);
+  if (!active.length) return "idle";
+  for (const c of active) {
+    if (!c.ready) return "loading";
+    let ps;
+    try { ps = c.player.getPlayerState(); } catch { return "loading"; }
+    if (ps === YTS().PLAYING || ps === YTS().BUFFERING) continue;
+    if (c.applying || c.fading || c.fadeInPending) continue;
+    return c.unlocked ? "loading" : "blocked";
+  }
+  return "ok";
+}
+
+async function reportPresence() {
+  if (isGM) return;
+  const s = myStatus();
+  const now = Date.now();
+  if (s === presenceSent.s && now - presenceSent.at < PRESENCE_HEARTBEAT) return;
+  presenceSent = { s, at: now };
+  try { await OBR.player.setMetadata({ [PRESENCE_KEY]: { s, t: now } }); } catch { /* nada */ }
+}
+
+const STATUS_UI = {
+  ok: ["🎧", "escuchando", "ok"],
+  idle: ["🎧", "con el addon abierto", "ok"],
+  loading: ["⏳", "cargando…", "warn"],
+  blocked: ["👆", "le falta tocar el video", "bad"],
+  muted: ["🔇", "se silenció", "warn"],
+  closed: ["❔", "no abrió el addon", "bad"],
+};
+
+function renderListeners() {
+  if (!isGM) return;
+  const now = Date.now();
+  const rows = partyPlayers.map((p) => {
+    const m = p.metadata && p.metadata[PRESENCE_KEY];
+    let status = "closed";
+    if (m && m.t) {
+      const seen = presenceSeen.get(p.id);
+      if (!seen || seen.t !== m.t) presenceSeen.set(p.id, { t: m.t, seenAt: now });
+      const seenAt = presenceSeen.get(p.id).seenAt;
+      if (now - seenAt < PRESENCE_STALE) status = m.s in STATUS_UI ? m.s : "loading";
+    }
+    return { name: p.name || "Jugador", status };
+  });
+  const somethingOn = Object.values(channels).some((c) => c.state && c.state.id && !c.state.paused);
+  const ok = rows.filter((r) => r.status === "ok" || (!somethingOn && r.status === "idle")).length;
+  $("listeners").classList.toggle("hidden", false);
+  $("l-count").textContent = rows.length
+    ? `🎧 ${ok}/${rows.length} ${somethingOn ? "escuchando" : "con el addon listo"}`
+    : "🎧 Todavía no hay jugadores en la sala";
+  const ul = $("l-list");
+  ul.innerHTML = "";
+  for (const r of rows) {
+    const [icon, text, cls] = STATUS_UI[r.status];
+    const li = document.createElement("li");
+    li.className = cls;
+    li.innerHTML = `<span class="who"></span><span class="st">${icon} ${text}</span>`;
+    li.querySelector(".who").textContent = r.name;
+    ul.appendChild(li);
+  }
+}
+
 function applyRole() {
+  if (!isGM) $("listeners").classList.add("hidden"); else renderListeners();
   document.body.classList.toggle("player-view", !isGM);
   Object.values(channels).forEach((c) => c.render && c.render());
   document.querySelectorAll(".gm-only").forEach((el) => el.classList.toggle("hidden", !isGM));
@@ -814,6 +891,14 @@ OBR.onReady(async () => {
     const gm = p.role === "GM";
     if (gm !== isGM) { isGM = gm; applyRole(); }
   });
+
+  // Quién escucha
+  try { partyPlayers = await OBR.party.getPlayers(); } catch { partyPlayers = []; }
+  OBR.party.onChange((players) => { partyPlayers = players; renderListeners(); });
+  renderListeners();
+  reportPresence();
+  setInterval(reportPresence, 2000);
+  setInterval(renderListeners, 5000);
 
   OBR.room.onMetadataChange((m) => {
     library = Array.isArray(m[LIBRARY_KEY]) ? m[LIBRARY_KEY] : [];
