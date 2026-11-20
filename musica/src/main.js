@@ -32,6 +32,14 @@ function saveLocal() {
   try { localStorage.setItem(LOCAL_KEY, JSON.stringify(local)); } catch { /* sin almacenamiento */ }
 }
 
+const fmt = (sec) => {
+  const t = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(t / 3600);
+  const m = Math.floor((t % 3600) / 60);
+  const ss = String(t % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+};
+
 const elapsed = (s) => (s.paused ? s.pausedAt || 0 : Math.max(0, (Date.now() - s.startedAt) / 1000));
 const sourceKey = (s) => (s && s.id ? `${s.kind}:${s.id}:${s.index || 0}:${s.track || 0}` : "none");
 
@@ -86,6 +94,7 @@ class Channel {
       <div class="player-wrap"><div id="yt-${this.id}"></div></div>
       <div class="title">—</div>
       <div class="sub"></div>
+      <div class="seek"><span class="t-cur">0:00</span><input type="range" min="0" max="100" step="1" value="0" disabled><span class="t-dur">0:00</span></div>
       <div class="ctrl gm-only hidden">
         <button data-a="prev" title="Anterior">⏮</button>
         <button data-a="pause" title="Pausa / Reproducir">⏯</button>
@@ -99,6 +108,18 @@ class Channel {
     this.titleEl = el.querySelector(".title");
     this.subEl = el.querySelector(".sub");
     this.gainEl = el.querySelector(".gain input");
+    this.seekEl = el.querySelector(".seek input");
+    this.curEl = el.querySelector(".t-cur");
+    this.durEl = el.querySelector(".t-dur");
+    this.seeking = false;
+    this.seekEl.addEventListener("input", () => {
+      this.seeking = true;
+      this.curEl.textContent = fmt(Number(this.seekEl.value));
+    });
+    this.seekEl.addEventListener("change", () => {
+      this.seeking = false;
+      this.gmSeek(Number(this.seekEl.value));
+    });
     el.querySelector('[data-a="prev"]').onclick = () => this.gmStep(-1);
     el.querySelector('[data-a="next"]').onclick = () => this.gmStep(1);
     el.querySelector('[data-a="pause"]').onclick = () => this.gmTogglePause();
@@ -144,6 +165,16 @@ class Channel {
     if (document.activeElement !== this.gainEl) this.gainEl.value = gain;
   }
 
+  /** Segundo en el que debería estar el tema (con bucle). */
+  target() {
+    const s = this.state;
+    if (!s) return 0;
+    const t = elapsed(s);
+    let d = s.duration || 0;
+    try { d = this.player.getDuration() || d; } catch { /* nada */ }
+    return d > 1 ? t % d : t;
+  }
+
   index() { try { return this.player.getPlaylistIndex(); } catch { return -1; } }
   length() { try { return (this.player.getPlaylist() || []).length; } catch { return 0; } }
 
@@ -162,7 +193,8 @@ class Channel {
     if (force || key !== this.appliedKey) {
       this.appliedKey = key;
       this.applying = true;
-      const start = Math.floor(elapsed(s));
+      let start = Math.floor(elapsed(s));
+      if (s.duration > 0) start = start % Math.floor(s.duration);
       if (s.kind === "playlist") {
         this.player.loadPlaylist({ list: s.id, listType: "playlist", index: s.index || 0, startSeconds: start });
       } else {
@@ -195,8 +227,7 @@ class Channel {
     }
     if (s.kind === "playlist" && !isGM) {
       const idx = this.index();
-      const age = (Date.now() - s.startedAt) / 1000;
-      if (idx >= 0 && idx !== (s.index || 0) && age > 5) {
+      if (idx >= 0 && idx !== (s.index || 0)) {
         this.applying = true;
         this.player.playVideoAt(s.index || 0);
         setTimeout(() => { this.applying = false; }, 3000);
@@ -204,10 +235,11 @@ class Channel {
       }
     }
     if (ps === YTS().PLAYING) {
-      const target = elapsed(s);
       const duration = this.player.getDuration() || 0;
+      const target = duration > 0 ? elapsed(s) % duration : elapsed(s);
       const pos = this.player.getCurrentTime() || 0;
-      if (duration > 0 && target < duration - 2 && Math.abs(pos - target) > DRIFT_SECONDS) {
+      const nearSeam = duration > 0 && ((target < 3 && pos > duration - 3) || (pos < 3 && target > duration - 3));
+      if (duration > 0 && !nearSeam && Math.abs(pos - target) > DRIFT_SECONDS) {
         this.player.seekTo(target, true);
       }
     } else if (ps === YTS().PAUSED || ps === YTS().CUED || ps === -1) {
@@ -222,31 +254,25 @@ class Channel {
       hideUnlock();
     }
     const s = this.state;
-    if (!isGM || !s || !s.id) return;
+    if (!s || !s.id) return;
+    if (!isGM) {
+      if (e.data === YTS().ENDED) {
+        if (s.kind === "playlist") this.player.playVideoAt(s.index || 0);
+        else { this.player.seekTo(0, true); this.player.playVideo(); }
+      }
+      return;
+    }
 
-    // El DM marca el ritmo: si YouTube pasó solo al siguiente tema, se lo cuenta a todos.
+    // Los temas siempre quedan en bucle: si YouTube pasó solo al siguiente o terminó, vuelve a empezar el mismo.
+    if (e.data === YTS().PLAYING && !this.applying) {
+      const d = Math.floor(this.player.getDuration() || 0);
+      if (d > 0 && d !== s.duration) writeChannel(this.id, { duration: d });
+    }
     if (e.data === YTS().PLAYING && s.kind === "playlist" && !this.applying) {
       const idx = this.index();
-      if (idx >= 0 && idx !== (s.index || 0)) {
-        if (s.shuffle) {
-          await this.gmPlayIndex(this.randomIndex());
-        } else {
-          await writeChannel(this.id, { index: idx, track: (s.track || 0) + 1, startedAt: Date.now(), paused: false });
-          this.appliedKey = sourceKey(this.state);
-          renderTracks();
-        }
-      }
+      if (idx >= 0 && idx !== (s.index || 0)) await this.restart();
     }
-    if (e.data === YTS().ENDED) {
-      if (s.kind === "video") {
-        await this.restart();
-      } else if (s.shuffle) {
-        await this.gmPlayIndex(this.randomIndex());
-      } else {
-        const n = this.length();
-        if (n > 0 && (s.index || 0) >= n - 1) await this.gmPlayIndex(0);
-      }
-    }
+    if (e.data === YTS().ENDED && !this.applying) await this.restart();
   }
 
   onPlayerError(e) {
@@ -288,9 +314,8 @@ class Channel {
     if (s.kind === "playlist") {
       const n = this.ready ? this.length() : 0;
       parts.push(n ? `${(s.index || 0) + 1}/${n}` : "lista");
-    } else {
-      parts.push("en bucle");
     }
+    parts.push("🔁");
     if (s.paused) parts.push("⏸");
     this.subEl.textContent = parts.join(" · ");
   }
@@ -301,7 +326,7 @@ class Channel {
     unlocked = true;
     const s = this.state || {};
     await writeChannel(this.id, {
-      kind: parsed.kind, id: parsed.id, name: name || "", index, track: (s.track || 0) + 1,
+      kind: parsed.kind, id: parsed.id, name: name || "", index, track: (s.track || 0) + 1, duration: 0,
       startedAt: Date.now(), paused: false, pausedAt: 0,
     });
     this.apply(true);
@@ -310,7 +335,7 @@ class Channel {
 
   async gmPlayIndex(index) {
     const s = this.state || {};
-    await writeChannel(this.id, { index, track: (s.track || 0) + 1, startedAt: Date.now(), paused: false, pausedAt: 0 });
+    await writeChannel(this.id, { index, track: (s.track || 0) + 1, duration: 0, startedAt: Date.now(), paused: false, pausedAt: 0 });
     this.apply(true);
     renderTracks();
   }
@@ -328,6 +353,40 @@ class Channel {
     const n = this.length() || 1;
     const idx = s.shuffle && step > 0 ? this.randomIndex() : ((s.index || 0) + step + n) % n;
     await this.gmPlayIndex(idx);
+  }
+
+  async gmSeek(seconds) {
+    const s = this.state;
+    if (!s || !s.id) return;
+    const t = Math.max(0, seconds);
+    if (s.paused) {
+      await writeChannel(this.id, { pausedAt: t });
+    } else {
+      await writeChannel(this.id, { startedAt: Date.now() - t * 1000 });
+    }
+    try { this.player.seekTo(t, true); } catch { /* nada */ }
+    this.updateSeek();
+  }
+
+  updateSeek() {
+    const s = this.state;
+    const active = Boolean(s && s.id && this.ready);
+    this.seekEl.disabled = !active || !isGM;
+    if (!active) {
+      this.seekEl.value = 0;
+      this.curEl.textContent = "0:00";
+      this.durEl.textContent = "0:00";
+      return;
+    }
+    let d = 0;
+    let pos = 0;
+    try { d = this.player.getDuration() || 0; pos = this.player.getCurrentTime() || 0; } catch { /* nada */ }
+    this.seekEl.max = Math.max(1, Math.floor(d));
+    this.durEl.textContent = fmt(d);
+    if (!this.seeking) {
+      this.seekEl.value = Math.floor(pos);
+      this.curEl.textContent = fmt(pos);
+    }
   }
 
   async gmTogglePause() {
@@ -353,7 +412,9 @@ class Channel {
     if (s && s.id && sourceKey(s) === this.appliedKey) {
       // Mismo tema: solo cambió la pausa, la mezcla o el aleatorio.
       if (s.paused && !(prev && prev.paused)) this.player.pauseVideo();
-      if (!s.paused && prev && prev.paused) { this.player.seekTo(elapsed(s), true); this.player.playVideo(); }
+      if (!s.paused && prev && prev.paused) { this.player.seekTo(this.target(), true); this.player.playVideo(); }
+      if (s.paused && prev && prev.paused && s.pausedAt !== prev.pausedAt) this.player.seekTo(s.pausedAt || 0, true);
+      if (!s.paused && prev && !prev.paused && s.startedAt !== prev.startedAt) this.player.seekTo(this.target(), true);
       this.applyVolume();
       this.render();
     } else {
@@ -573,6 +634,7 @@ function applyRole() {
     $("gm-library").classList.remove("hidden");
   }
   $("player-note").classList.toggle("hidden", isGM);
+  Object.values(channels).forEach((c) => c.updateSeek && c.updateSeek());
 }
 
 OBR.onReady(async () => {
@@ -606,4 +668,5 @@ OBR.onReady(async () => {
   for (const ch of Object.values(channels)) ch.apply(true);
   setInterval(() => Object.values(channels).forEach((c) => c.tick()), 3000);
   setInterval(() => Object.values(channels).forEach((c) => c.render()), 4000);
+  setInterval(() => Object.values(channels).forEach((c) => c.updateSeek()), 1000);
 });
