@@ -1,4 +1,6 @@
 import OBR from "@owlbear-rodeo/sdk";
+import { renderBusqueda } from "./busqueda.js";
+import { renderPersecucion } from "./persecucion.js";
 import {
   NOMBRES, ESPECIES, OFICIOS, RASGOS, HABLA, QUIERE, SECRETOS, BOTIN_OBJETOS, BOTIN_MAGICO,
   ENCUENTROS, CLIMA, RUMORES, LUGARES, COMPLICACIONES, REACCION,
@@ -178,10 +180,10 @@ function options(kind) {
 function generate(kind = currentKind) {
   currentKind = kind;
   current = GEN[kind]();
-  render();
+  renderImpro();
 }
 
-function render() {
+function renderImpro() {
   const saved = loadSaved();
   $("app").innerHTML = `
     <div class="grid">
@@ -218,7 +220,7 @@ function render() {
       const list = loadSaved();
       list.unshift({ titulo: current.titulo, html: current.html, t: Date.now() });
       saveSaved(list);
-      render();
+      renderImpro();
       OBR.notification.show("📌 Guardado en el Kit de impro.", "SUCCESS");
     };
     $("show").onclick = () => {
@@ -237,16 +239,33 @@ function render() {
       const list = loadSaved();
       list.splice(Number(b.dataset.del), 1);
       saveSaved(list);
-      render();
+      renderImpro();
     };
   });
+}
+
+// ---------------- Pestañas ----------------
+
+const TABS = [["impro", "🎲 Impro"], ["busqueda", "🔎 Búsqueda"], ["persecucion", "🏃 Persecución"]];
+let tab = "impro";
+try { tab = localStorage.getItem("impro-pestana") || "impro"; } catch { /* nada */ }
+
+function showTab(t) {
+  tab = t;
+  try { localStorage.setItem("impro-pestana", t); } catch { /* nada */ }
+  $("tabs").innerHTML = TABS.map(([k, l]) => `<button class="tab ${k === tab ? "on" : ""}" data-tab="${k}">${l}</button>`).join("");
+  document.querySelectorAll("[data-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.tab); });
+  if (t === "busqueda") renderBusqueda();
+  else if (t === "persecucion") renderPersecucion();
+  else if (current) renderImpro();
+  else generate("pnj");
 }
 
 OBR.onReady(async () => {
   const role = await OBR.player.getRole();
   if (role !== "GM") {
-    $("app").innerHTML = `<div class="locked">🎲<p>El Kit de impro es una herramienta del DM.</p></div>`;
+    $("app").innerHTML = `<div class="locked">🎲<p>La Caja del DM es una herramienta del DM.</p></div>`;
     return;
   }
-  generate("pnj");
+  showTab(tab);
 });
