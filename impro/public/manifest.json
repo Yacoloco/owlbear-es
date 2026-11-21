@@ -1,0 +1,17 @@
+{
+  "name": "Kit de impro (ES)",
+  "version": "1.0.0",
+  "manifest_version": 1,
+  "author": "Yacoloco",
+  "homepage_url": "https://github.com/Yacoloco/owlbear-es",
+  "description": "Tablas al toque para el DM: PNJ, nombres, botín, encuentros, clima, rumores y más, ambientado en Phandalin.",
+  "icon": "/owlbear-es/impro/icon.svg",
+  "action": {
+    "title": "Kit de impro",
+    "icon": "/owlbear-es/impro/icon.svg",
+    "popover": "/owlbear-es/impro/index.html?v=1.0",
+    "height": 620,
+    "width": 400
+  },
+  "background_url": "/owlbear-es/impro/background.html?v=1.0"
+}

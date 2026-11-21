@@ -7,6 +7,7 @@ Traducciones al español de tres extensiones de código abierto para Owlbear Rod
 - `dados/` — [Dice](https://github.com/owlbear-rodeo/dice) de Owlbear Rodeo (GPL-3.0)
 
 - `musica/` — reproductor de playlists de YouTube sincronizado para toda la sala (propio)
+- `impro/` — kit de improvisación para el DM: PNJ, nombres, botín, encuentros, clima, rumores, lugares, complicaciones y reacciones (propio)
 - `fichas/` — fichas de PJ, PNJ y enemigos pegadas a los tokens; cada jugador ve solo la suya (propio). Las fichas no están en el repo: el DM las importa desde un archivo propio.
 
 Cada carpeta traducida conserva la licencia GPL-3.0 original. GitHub Actions construye y publica todo en GitHub Pages.

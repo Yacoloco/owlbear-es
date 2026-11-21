@@ -34,6 +34,9 @@ jobs:
       - name: Construir Fichas
         working-directory: fichas
         run: npm install && npm run build
+      - name: Construir Kit de impro
+        working-directory: impro
+        run: npm install && npm run build
       - name: Armar el sitio
         run: |
           mkdir -p _site
@@ -42,6 +45,7 @@ jobs:
           cp -r dados/dist _site/dados
           cp -r musica/dist _site/musica
           cp -r fichas/dist _site/fichas
+          cp -r impro/dist _site/impro
           touch _site/.nojekyll
           cp index.html _site/index.html
       - uses: actions/upload-pages-artifact@v3
