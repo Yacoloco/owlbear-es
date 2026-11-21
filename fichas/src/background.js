@@ -2,6 +2,7 @@ import OBR from "@owlbear-rodeo/sdk";
 import {
   ID, KEY, MODAL_ID, BASE, VERSION, syncScene, INIT_KEY,
   PENDING_KEY, DICE_ROLL_KEY, DICE_VALUES_KEY, rollSig, rollHasType, diceTotal, normalizeSheet,
+  applyHeal, applyDeathSave, firstD20,
 } from "./shared.js";
 import { startBars } from "./bars.js";
 
@@ -34,6 +35,28 @@ OBR.onReady(async () => {
     },
   });
 
+  // DM: daño o curación a todos los tokens seleccionados de una.
+  OBR.contextMenu.create({
+    id: `${ID}/menu-masivo`,
+    icons: [
+      {
+        icon: `${BASE}/icon-dmg.svg`,
+        label: "Daño/curación",
+        filter: { roles: ["GM"], every: [{ key: "type", value: "IMAGE" }] },
+      },
+    ],
+    onClick(context) {
+      const ids = context.items.map((it) => it.id).join(",");
+      OBR.player.deselect().catch(() => { /* nada */ });
+      OBR.modal.open({
+        id: "com.yacoloco.fichas/masivo",
+        url: `${BASE}/masivo.html?v=${VERSION}&ids=${encodeURIComponent(ids)}`,
+        width: 460,
+        height: 520,
+      });
+    },
+  });
+
   // Jugadores: solo aparece en los tokens cuya ficha es suya.
   OBR.contextMenu.create({
     id: `${ID}/menu-jugador`,
@@ -63,6 +86,7 @@ OBR.onReady(async () => {
     const total = diceTotal(roll, values);
     if (total === null) return;
     try { localStorage.removeItem(PENDING_KEY); } catch { /* nada */ }
+    let note = "";
     try {
       await OBR.scene.items.updateItems([pending.itemId], (items) => {
         for (const it of items) {
@@ -71,12 +95,19 @@ OBR.onReady(async () => {
             it.metadata[INIT_KEY] = { count: String(total), active: Boolean(prev && prev.active) };
           } else if (pending.kind === "heal" && it.metadata[KEY]) {
             const d = it.metadata[KEY];
-            const f = normalizeSheet({ ...d.ficha });
-            f.pgActual = Math.min(Number(f.pgMax) || 0, (Number(f.pgActual) || 0) + Math.max(0, total));
+            const f = normalizeSheet(JSON.parse(JSON.stringify(d.ficha)));
+            applyHeal(f, Math.max(0, total));
+            it.metadata[KEY] = { ...d, ficha: f, rev: (d.rev || 0) + 1 };
+          } else if (pending.kind === "death" && it.metadata[KEY]) {
+            const d = it.metadata[KEY];
+            const f = normalizeSheet(JSON.parse(JSON.stringify(d.ficha)));
+            const nat = firstD20(roll, values);
+            note = applyDeathSave(f, nat === null ? total : nat);
             it.metadata[KEY] = { ...d, ficha: f, rev: (d.rev || 0) + 1 };
           }
         }
       });
+      if (note) OBR.notification.show(note, "INFO");
     } catch (e) {
       console.error("fichas: anotar tirada", e);
     }

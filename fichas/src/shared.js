@@ -5,7 +5,7 @@ export const ID = "com.yacoloco.fichas";
 export const KEY = `${ID}/ficha`;
 export const MODAL_ID = `${ID}/modal`;
 export const BASE = "/owlbear-es/fichas";
-export const VERSION = "1.5";
+export const VERSION = "1.6";
 
 export const STATS = ["FUE", "DES", "CON", "INT", "SAB", "CAR"];
 export const TIPOS = { pj: "PJ", pnj: "PNJ", enemigo: "Enemigo" };
@@ -419,4 +419,93 @@ export function diceTotal(dice, values) {
   if (dice.combination === "HIGHEST") return Math.max(...vals) + bonus;
   if (dice.combination === "LOWEST") return Math.min(...vals) + bonus;
   return vals.reduce((s, v) => s + v, 0) + bonus;
+}
+
+// ---------- Daño, curación y salvaciones contra la muerte ----------
+
+export function blankDeath() {
+  return { exitos: 0, fallos: 0, estable: false, muerto: false };
+}
+
+function ensureDeath(f) {
+  if (!f.muerte || typeof f.muerte !== "object") f.muerte = blankDeath();
+  return f.muerte;
+}
+
+/** Resta daño (primero a los PG temporales). Devuelve avisos para mostrar. */
+export function applyDamage(f, amount) {
+  normalizeSheet(f);
+  const notes = [];
+  let dmg = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!dmg) return notes;
+  const t = Number(f.pgTemp) || 0;
+  const fromTemp = Math.min(t, dmg);
+  f.pgTemp = t - fromTemp;
+  dmg -= fromTemp;
+  const before = Number(f.pgActual) || 0;
+  f.pgActual = Math.max(0, before - dmg);
+  if (dmg > 0 && f.estados.includes("concentrado")) {
+    notes.push(`🧠 ${f.nombre}: salvación de CON CD ${Math.min(30, Math.max(10, Math.floor(dmg / 2)))} para mantener la concentración.`);
+  }
+  if (f.tipo === "pj" && dmg > 0) {
+    const m = ensureDeath(f);
+    if (before === 0) {
+      if (!m.muerto) {
+        m.fallos = Math.min(3, m.fallos + 1);
+        m.estable = false;
+        if (m.fallos >= 3) m.muerto = true;
+        notes.push(`💀 ${f.nombre} recibió daño en el suelo: ${m.muerto ? "murió" : `${m.fallos} fallo${m.fallos > 1 ? "s" : ""}`} (un crítico cuenta como 2: sumalo a mano).`);
+      }
+    } else if (f.pgActual === 0) {
+      Object.assign(m, blankDeath());
+      if (!f.estados.includes("inconsciente")) f.estados.push("inconsciente");
+      notes.push(`💀 ${f.nombre} cayó a 0 PG: inconsciente. Empieza a tirar salvaciones contra la muerte.`);
+    }
+  }
+  return notes;
+}
+
+export function applyHeal(f, amount) {
+  normalizeSheet(f);
+  const n = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!n) return;
+  const before = Number(f.pgActual) || 0;
+  f.pgActual = Math.min(Number(f.pgMax) || 0, before + n);
+  if (f.tipo === "pj" && before === 0 && f.pgActual > 0) {
+    f.muerte = blankDeath();
+    f.estados = f.estados.filter((k) => k !== "inconsciente");
+  }
+}
+
+/** Anota una salvación contra la muerte según el d20 natural. */
+export function applyDeathSave(f, nat) {
+  normalizeSheet(f);
+  const m = ensureDeath(f);
+  if (m.muerto || m.estable || (Number(f.pgActual) || 0) > 0) return "";
+  if (nat === 20) {
+    f.pgActual = 1;
+    f.muerte = blankDeath();
+    f.estados = f.estados.filter((k) => k !== "inconsciente");
+    return `✨ ${f.nombre} sacó 20 natural: se levanta con 1 PG.`;
+  }
+  if (nat === 1) m.fallos = Math.min(3, m.fallos + 2);
+  else if (nat >= 10) m.exitos = Math.min(3, m.exitos + 1);
+  else m.fallos = Math.min(3, m.fallos + 1);
+  if (m.fallos >= 3) { m.muerto = true; return `☠️ ${f.nombre} murió.`; }
+  if (m.exitos >= 3) { m.estable = true; return `🩹 ${f.nombre} quedó estable (inconsciente, pero ya no tira).`; }
+  return `💀 ${f.nombre}: ${m.exitos} éxito${m.exitos === 1 ? "" : "s"} / ${m.fallos} fallo${m.fallos === 1 ? "" : "s"}.`;
+}
+
+/** Valor natural del primer d20 de una tirada de Dados. */
+export function firstD20(roll, values) {
+  let v = null;
+  const walk = (d) => {
+    for (const x of (d && d.dice) || []) {
+      if (v !== null) return;
+      if (x && x.type === "D20" && typeof x.id === "string" && values[x.id] != null) v = values[x.id];
+      else if (x && x.dice) walk(x);
+    }
+  };
+  walk(roll);
+  return v;
 }

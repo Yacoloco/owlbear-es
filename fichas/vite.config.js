@@ -9,6 +9,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         ficha: resolve(__dirname, "ficha.html"),
         background: resolve(__dirname, "background.html"),
+        masivo: resolve(__dirname, "masivo.html"),
       },
     },
   },

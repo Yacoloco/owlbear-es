@@ -4,7 +4,7 @@ import {
   loadLibrary, mergeIntoLibrary, parseImport, sortSheets,
   normName, setLink, removeLink, copyFromLink, isToken, updateLinkTemplate,
   ESTADOS, normalizeSheet, initBonus, parseExpr, exprText, prepareDice, rollSig,
-  PENDING_KEY, DICE_ROLL_KEY,
+  PENDING_KEY, DICE_ROLL_KEY, applyDamage, applyHeal, blankDeath,
 } from "./shared.js";
 
 const itemId = new URLSearchParams(location.search).get("item");
@@ -233,7 +233,10 @@ function renderSheet() {
         <h1>${esc(f.nombre)}</h1>
         <div class="sub"><span class="tag ${esc(f.tipo)}">${TIPOS[f.tipo] || ""}</span> ${esc(f.sub)}</div>
       </div>
-      ${canEdit ? `<button id="edit" class="primary">✏️ Editar</button>` : ""}
+      <div class="head-btns">
+        <button id="spells" title="Ver todos los conjuros">📖 Conjuros</button>
+        ${canEdit ? `<button id="edit" class="primary">✏️ Editar</button>` : ""}
+      </div>
     </header>
 
     <div class="chips">
@@ -256,6 +259,7 @@ function renderSheet() {
       </div>
       ${hpBar(f)}
     </div>
+${deathBlock(f, canEdit)}
 
     ${rollBar}
 
@@ -286,6 +290,8 @@ function renderSheet() {
     </details>`;
 
   if (canEdit) rollify();
+  linkSpells();
+  $("spells").onclick = () => openBrowser();
 
   const update = (fn) => {
     const nf = clone(normalizeSheet(data.ficha));
@@ -328,17 +334,9 @@ function renderSheet() {
   $("edit").onclick = () => { editing = true; draft = normalizeSheet(clone(f)); render(); };
   const n = () => Math.max(0, Math.floor(Number($("hp-n").value) || 0));
   $("hp-dmg").onclick = () => update((nf) => {
-    let dmg = n();
-    const t = Number(nf.pgTemp) || 0;
-    const fromTemp = Math.min(t, dmg);
-    nf.pgTemp = t - fromTemp;
-    dmg -= fromTemp;
-    nf.pgActual = Math.max(0, (Number(nf.pgActual) || 0) - dmg);
-    if (dmg > 0 && nf.estados.includes("concentrado")) {
-      OBR.notification.show(`🧠 ${nf.nombre} recibió daño: salvación de CON CD ${Math.max(10, Math.floor(dmg / 2))} para mantener la concentración.`, "WARNING");
-    }
+    for (const note of applyDamage(nf, n())) OBR.notification.show(note, "WARNING");
   });
-  $("hp-heal").onclick = () => update((nf) => { nf.pgActual = Math.min(Number(nf.pgMax) || 0, (Number(nf.pgActual) || 0) + n()); });
+  $("hp-heal").onclick = () => update((nf) => applyHeal(nf, n()));
   $("hp-temp").onclick = () => update((nf) => { nf.pgTemp = Math.max(Number(nf.pgTemp) || 0, n()); });
 
   document.querySelectorAll("[data-est]").forEach((b) => {
@@ -404,12 +402,179 @@ function renderSheet() {
   });
   $("init").onclick = () => prepare(parseExpr(sg(initBonus(f))), "Iniciativa", "init");
 
+  document.querySelectorAll("[data-death]").forEach((b) => {
+    b.onclick = () => update((nf) => {
+      nf.muerte ||= blankDeath();
+      const key = b.dataset.death;
+      const i = Number(b.dataset.i);
+      nf.muerte[key] = nf.muerte[key] > i ? i : i + 1;
+      nf.muerte.estable = nf.muerte.exitos >= 3;
+      nf.muerte.muerto = nf.muerte.fallos >= 3;
+    });
+  });
+  if ($("death-roll")) $("death-roll").onclick = () => prepare({ type: "D20", count: 1, bonus: 0 }, "Salvación contra la muerte", "death", "normal");
+  if ($("death-reset")) $("death-reset").onclick = () => update((nf) => { nf.muerte = blankDeath(); });
+
   let t = null;
   $("notes").oninput = (e) => {
     clearTimeout(t);
     const v = e.target.value;
     t = setTimeout(() => save({ ...data, ficha: { ...data.ficha, notas: v } }), 600);
   };
+}
+
+// ---------------- Salvaciones contra la muerte ----------------
+
+function deathBlock(f, canEdit) {
+  if (f.tipo !== "pj" || (Number(f.pgActual) || 0) > 0) return "";
+  const m = f.muerte || blankDeath();
+  const pips = (n, cls, key) => Array.from({ length: 3 }, (_, i) =>
+    `<button class="dpip ${cls} ${i < n ? "full" : ""}" data-death="${key}" data-i="${i}" ${canEdit && !m.muerto ? "" : "disabled"}></button>`).join("");
+  const estado = m.muerto ? `<b class="dead">☠️ Muerto</b>` : m.estable ? `<b class="stable">🩹 Estable</b>` : "";
+  return `
+    <div class="death">
+      <div class="death-title">💀 Salvaciones contra la muerte ${estado}</div>
+      <div class="death-row"><span>Éxitos</span>${pips(m.exitos, "ok", "exitos")}<span class="sp"></span><span>Fallos</span>${pips(m.fallos, "bad", "fallos")}</div>
+      ${canEdit && !m.muerto && !m.estable ? `<button id="death-roll" class="primary">🎲 Tirar salvación (d20)</button>` : ""}
+      ${canEdit && (m.muerto || m.estable) ? `<button id="death-reset">↺ Reiniciar</button>` : ""}
+    </div>`;
+}
+
+// ---------------- Conjuros ----------------
+// Todos los conjuros del SRD 5.2 (en español) vienen con el addon: conjuros.json.
+
+let spells = null;      // lista
+let spellIndex = null;  // nombre normalizado → conjuro
+let spellsLoading = null;
+let browser = { clase: null, nivel: "todos", q: "" };
+
+const plain = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+function loadSpells() {
+  if (spells) return Promise.resolve(spells);
+  spellsLoading ||= fetch(new URL("conjuros.json", location.href))
+    .then((r) => r.json())
+    .then((d) => {
+      spells = d.conjuros;
+      spellIndex = new Map();
+      for (const c of spells) { spellIndex.set(plain(c.nombre), c); spellIndex.set(plain(c.en), c); }
+      return spells;
+    })
+    .catch(() => { spellsLoading = null; return []; });
+  return spellsLoading;
+}
+
+/** Convierte los nombres de conjuros en cursiva (*Escudo*) en links a su descripción. */
+async function linkSpells() {
+  await loadSpells();
+  if (!spellIndex) return;
+  document.querySelectorAll("#app .md i, #app .details i").forEach((el) => {
+    const c = spellIndex.get(plain(el.textContent));
+    if (c) { el.classList.add("spell"); el.dataset.spell = c.id; el.title = "Ver el conjuro"; }
+  });
+}
+
+const CLASES = ["bardo", "brujo", "clérigo", "druida", "explorador", "hechicero", "mago", "paladín"];
+function guessClass(f) {
+  const t = plain(f && f.sub);
+  const map = { bardo: "bardo", brujo: "brujo", bruja: "brujo", clerigo: "clérigo", clériga: "clérigo", clerica: "clérigo", druida: "druida", explorador: "explorador", exploradora: "explorador", hechicero: "hechicero", hechicera: "hechicero", mago: "mago", maga: "mago", paladin: "paladín", paladina: "paladín" };
+  for (const w of t.split(" ")) if (map[w]) return map[w];
+  return "todas";
+}
+
+const nivelTxt = (n) => (n === 0 ? "Truco" : `Nivel ${n}`);
+
+function overlay(html) {
+  let o = $("overlay");
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "overlay";
+    document.body.appendChild(o);
+    o.addEventListener("click", (e) => { if (e.target === o) closeOverlay(); });
+  }
+  o.innerHTML = `<div class="ov-panel"><button class="close ov-close" id="ov-close" title="Cerrar">✕</button>${html}</div>`;
+  o.classList.remove("hidden");
+  $("ov-close").onclick = closeOverlay;
+  return o;
+}
+function closeOverlay() { const o = $("overlay"); if (o) o.classList.add("hidden"); }
+
+function inSheet(c) {
+  const f = data && data.ficha;
+  if (!f) return false;
+  const all = [f.detalles, ...(f.secciones || []).map((s) => s.md)].join("\n");
+  return plain(all).includes(plain(c.nombre));
+}
+
+async function addToSheet(c) {
+  const nf = clone(normalizeSheet(data.ficha));
+  nf.secciones ||= [];
+  let sec = nf.secciones.find((s) => plain(s.t).startsWith("conjuros"));
+  if (!sec) { sec = { t: "Conjuros", md: "" }; nf.secciones.push(sec); }
+  sec.md = `${String(sec.md || "").trimEnd()}\n* *${c.nombre}* (${c.nivel === 0 ? "truco" : `nv ${c.nivel}`})`.trim();
+  await save({ ...data, ficha: nf });
+  OBR.notification.show(`📖 ${c.nombre} agregado a la ficha.`, "SUCCESS");
+}
+
+async function openSpell(id, fromBrowser = false) {
+  await loadSpells();
+  const c = spells.find((x) => x.id === id);
+  if (!c) return;
+  const canEdit = isGM || (data && data.owner === me);
+  overlay(`
+    ${fromBrowser ? `<button id="ov-back" class="mini back">← Lista</button>` : ""}
+    <h2 class="sp-name">${esc(c.nombre)} <span class="muted">· ${esc(c.en)}</span></h2>
+    <div class="sp-tags">
+      <span class="tag lvl">${nivelTxt(c.nivel)}</span><span class="muted">${esc(c.escuela)}</span>
+      ${c.conc ? `<span class="tag conc" title="Requiere concentración">Concentración</span>` : ""}
+      ${c.ritual ? `<span class="tag rit" title="Se puede lanzar como ritual">Ritual</span>` : ""}
+    </div>
+    <div class="sp-grid">
+      <b>Tiempo</b><span>${esc(c.tiempo)}</span>
+      <b>Alcance</b><span>${esc(c.alcance)}</span>
+      <b>Componentes</b><span>${esc(c.comp)}</span>
+      <b>Duración</b><span>${esc(c.duracion)}</span>
+      <b>Clases</b><span>${esc(c.clases.join(", "))}</span>
+    </div>
+    <p class="sp-res rollable">${esc(c.resumen)}</p>
+    ${canEdit && data && data.ficha && !inSheet(c) ? `<button id="sp-add" class="primary">➕ Agregar a la ficha</button>` : ""}
+    ${c.texto ? `<details class="sp-orig"><summary>Texto original completo (inglés)</summary><div class="sp-txt">${esc(c.texto)}</div></details>` : ""}
+    <p class="hint">Conjuros del SRD 5.2 de Wizards of the Coast (CC-BY-4.0). Resúmenes en español propios.</p>`);
+  if (fromBrowser) $("ov-back").onclick = () => openBrowser();
+  if ($("sp-add")) $("sp-add").onclick = async () => { await addToSheet(c); openSpell(id, fromBrowser); };
+}
+
+async function openBrowser() {
+  await loadSpells();
+  if (browser.clase === null) browser.clase = guessClass(data && data.ficha);
+  overlay(`
+    <h2>📖 Conjuros</h2>
+    <div class="row">
+      <select id="b-clase"><option value="todas">Todas las clases</option>${CLASES.map((c) => `<option value="${c}">${c[0].toUpperCase() + c.slice(1)}</option>`).join("")}</select>
+      <select id="b-nivel"><option value="todos">Todos los niveles</option><option value="0">Trucos</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<option value="${n}">Nivel ${n}</option>`).join("")}</select>
+    </div>
+    <input id="b-q" type="search" placeholder="Buscar por nombre (español o inglés)…" value="${esc(browser.q)}" />
+    <ul class="sp-list" id="b-list"></ul>`);
+  $("b-clase").value = browser.clase;
+  $("b-nivel").value = browser.nivel;
+  const draw = () => {
+    const q = plain(browser.q);
+    const list = spells.filter((c) =>
+      (browser.clase === "todas" || c.clases.includes(browser.clase)) &&
+      (browser.nivel === "todos" || c.nivel === Number(browser.nivel)) &&
+      (!q || plain(c.nombre).includes(q) || plain(c.en).includes(q)));
+    $("b-list").innerHTML = list.length ? list.map((c) => `
+      <li data-id="${esc(c.id)}"><span class="tag lvl">${c.nivel === 0 ? "T" : c.nivel}</span>
+        <span class="nm">${esc(c.nombre)}${inSheet(c) ? " ✓" : ""}</span>
+        <span class="muted">${c.conc ? "Ⓒ " : ""}${c.ritual ? "Ⓡ " : ""}${esc(c.escuela)}</span></li>`).join("")
+      : `<li class="empty muted">No hay conjuros con esos filtros.</li>`;
+    document.querySelectorAll("#b-list li[data-id]").forEach((li) => { li.onclick = () => openSpell(li.dataset.id, true); });
+  };
+  $("b-clase").onchange = (e) => { browser.clase = e.target.value; draw(); };
+  $("b-nivel").onchange = (e) => { browser.nivel = e.target.value; draw(); };
+  $("b-q").oninput = (e) => { browser.q = e.target.value; draw(); };
+  draw();
+  $("b-q").focus();
 }
 
 // ---------------- Tiradas ----------------
@@ -426,16 +591,16 @@ let lastMsg = "";
  * Carga la tirada en la extensión Dados (no tira).
  * kind "init" o "heal": cuando el jugador tire, Fichas anota el resultado solo.
  */
-async function prepare(p, label, kind = null) {
+async function prepare(p, label, kind = null, forceMode = null) {
   if (!p) return;
   const isD20 = p.type === "D20" && p.count === 1;
-  const adv = prepareDice(p, isD20 ? rollMode() : "normal");
+  const adv = prepareDice(p, forceMode || (isD20 ? rollMode() : "normal"));
   if (kind) {
     let sig0 = "";
     try { sig0 = rollSig((await OBR.player.getMetadata())[DICE_ROLL_KEY]); } catch { /* nada */ }
     try { localStorage.setItem(PENDING_KEY, JSON.stringify({ kind, itemId, sig0, type: p.type, t: Date.now() })); } catch { /* nada */ }
   }
-  lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Iniciativa" : kind === "heal" ? " → se suma a los PG" : ""}`;
+  lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Iniciativa" : kind === "heal" ? " → se suma a los PG" : kind === "death" ? " → se anota sola" : ""}`;
   const el = $("rollmsg");
   if (el) el.innerHTML = lastMsg;
   // Se cierra la ficha (y el menú del token) y Dados se abre solo con la tirada cargada.
@@ -624,9 +789,12 @@ async function refreshItem() {
 OBR.onReady(async () => {
   $("close").onclick = () => OBR.modal.close(MODAL_ID);
   $("app").addEventListener("click", (e) => {
+    const sp = e.target.closest(".spell[data-spell]");
+    if (sp) { openSpell(sp.dataset.spell); return; }
     const el = e.target.closest(".roll[data-roll]");
     if (el && !el.classList.contains("demo")) prepare(parseExpr(el.dataset.roll), labelFor(el));
   });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeOverlay(); });
   me = await OBR.player.getId();
   isGM = (await OBR.player.getRole()) === "GM";
   try { players = (await OBR.party.getPlayers()).filter((p) => p.role !== "GM"); } catch { players = []; }

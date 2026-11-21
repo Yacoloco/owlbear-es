@@ -10,3 +10,7 @@ Traducciones al español de tres extensiones de código abierto para Owlbear Rod
 - `fichas/` — fichas de PJ, PNJ y enemigos pegadas a los tokens; cada jugador ve solo la suya (propio). Las fichas no están en el repo: el DM las importa desde un archivo propio.
 
 Cada carpeta traducida conserva la licencia GPL-3.0 original. GitHub Actions construye y publica todo en GitHub Pages.
+
+## Créditos
+
+La lista de conjuros de `fichas/` incluye material del *System Reference Document 5.2* de Wizards of the Coast LLC, bajo licencia [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/). Los resúmenes en español son propios.
