@@ -130,6 +130,8 @@ OBR.onReady(async () => {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   };
+  try { $("turno-dm").checked = localStorage.getItem("fichas-turno-dm") === "1"; } catch { /* nada */ }
+  $("turno-dm").onchange = (e) => { try { localStorage.setItem("fichas-turno-dm", e.target.checked ? "1" : "0"); } catch { /* nada */ } };
   $("lib-filter").oninput = (e) => { libFilter = e.target.value; renderLibrary(); };
   window.addEventListener("storage", () => { if (isGM) { renderLibrary(); renderLinks(); } });
 

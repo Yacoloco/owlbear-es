@@ -5,7 +5,7 @@ export const ID = "com.yacoloco.fichas";
 export const KEY = `${ID}/ficha`;
 export const MODAL_ID = `${ID}/modal`;
 export const BASE = "/owlbear-es/fichas";
-export const VERSION = "1.6";
+export const VERSION = "1.7";
 
 export const STATS = ["FUE", "DES", "CON", "INT", "SAB", "CAR"];
 export const TIPOS = { pj: "PJ", pnj: "PNJ", enemigo: "Enemigo" };
@@ -149,7 +149,7 @@ export function setLink(name, data) {
   const ignored = loadIgnored();
   ignored.delete(n);
   saveIgnored(ignored);
-  const link = { stamp: newStamp(), tipo: data.ficha.tipo, data: { owner: data.owner || null, ownerName: data.ownerName || "", ficha: data.ficha }, rev: 0 };
+  const link = { stamp: newStamp(), tipo: data.ficha.tipo, data: { owner: data.owner || null, ownerName: data.ownerName || "", verVida: data.verVida || [], ficha: data.ficha }, rev: 0 };
   links[n] = link;
   saveLinks(links);
   return link;
@@ -188,7 +188,7 @@ export async function syncScene(OBR, KEY) {
     const d = it.metadata[KEY];
     const n = normName(it.name);
     if (!n || !d || !d.ficha || links[n] || ignored.has(n)) continue;
-    links[n] = { stamp: d.stamp || newStamp(), tipo: d.ficha.tipo, data: { owner: d.owner || null, ownerName: d.ownerName || "", ficha: d.ficha }, rev: d.rev || 0 };
+    links[n] = { stamp: d.stamp || newStamp(), tipo: d.ficha.tipo, data: { owner: d.owner || null, ownerName: d.ownerName || "", verVida: d.verVida || [], ficha: d.ficha }, rev: d.rev || 0 };
     linksChanged = true;
   }
 
@@ -199,7 +199,7 @@ export async function syncScene(OBR, KEY) {
       const d = it.metadata[KEY];
       if (normName(it.name) !== n || !d || !d.ficha || d.stamp !== link.stamp) continue;
       if ((d.rev || 0) > (link.rev || 0)) {
-        link.data = { owner: d.owner || null, ownerName: d.ownerName || "", ficha: d.ficha };
+        link.data = { owner: d.owner || null, ownerName: d.ownerName || "", verVida: d.verVida || [], ficha: d.ficha };
         link.rev = d.rev;
         linksChanged = true;
       }
@@ -238,7 +238,7 @@ export function updateLinkTemplate(name, data) {
   const links = loadLinks();
   const link = links[n];
   if (!link || link.stamp !== data.stamp) return;
-  link.data = { owner: data.owner || null, ownerName: data.ownerName || "", ficha: data.ficha };
+  link.data = { owner: data.owner || null, ownerName: data.ownerName || "", verVida: data.verVida || [], ficha: data.ficha };
   link.tipo = data.ficha.tipo;
   saveLinks(links);
 }
@@ -509,3 +509,34 @@ export function firstD20(roll, values) {
   walk(roll);
   return v;
 }
+
+/**
+ * ¿Este jugador puede ver la vida de este token?
+ * El DM siempre; el dueño de la ficha siempre; el resto solo si el DM se lo permitió.
+ * verVida: "todos" o lista de ids de jugadores.
+ */
+export function canSeeHp(d, me, isGM) {
+  if (isGM) return true;
+  if (!d) return false;
+  if (d.owner && d.owner === me) return true;
+  if (d.verVida === "todos") return true;
+  return Array.isArray(d.verVida) && d.verVida.includes(me);
+}
+
+// ---------- Turnos de Battle Board ----------
+// Battle Board marca en cada token si es su turno (active) y qué gastó (turnResources).
+
+export const BB_KEY = "com.missing-link-dev.battle-board/metadata";
+
+export const ACCIONES_BASICAS = [
+  ["Atacar", "Un ataque con un arma o sin armas (algunas clases hacen más de uno)."],
+  ["Lanzar un conjuro", "Uno de tiempo de lanzamiento 1 acción."],
+  ["Correr", "Ganás movimiento extra igual a tu velocidad este turno."],
+  ["Destrabarse", "Tu movimiento no provoca ataques de oportunidad este turno."],
+  ["Esquivar", "Hasta tu próximo turno, los ataques contra vos tienen desventaja y tenés ventaja en salvaciones de DES."],
+  ["Ayudar", "Un aliado tiene ventaja en su próxima prueba o ataque contra un enemigo a 5 pies tuyo."],
+  ["Esconderse", "Prueba de DES (Sigilo) para quedar escondido, si no te ven."],
+  ["Buscar", "Prueba de Percepción o Investigación para encontrar algo."],
+  ["Preparar", "Elegís una acción y lo que la dispara; la hacés con tu reacción cuando pase."],
+  ["Usar un objeto", "Tomar una poción, prender una antorcha, usar un objeto mágico."],
+];

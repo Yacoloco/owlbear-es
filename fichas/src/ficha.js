@@ -4,10 +4,11 @@ import {
   loadLibrary, mergeIntoLibrary, parseImport, sortSheets,
   normName, setLink, removeLink, copyFromLink, isToken, updateLinkTemplate,
   ESTADOS, normalizeSheet, initBonus, parseExpr, exprText, prepareDice, rollSig,
-  PENDING_KEY, DICE_ROLL_KEY, applyDamage, applyHeal, blankDeath,
+  PENDING_KEY, DICE_ROLL_KEY, applyDamage, applyHeal, blankDeath, BB_KEY, ACCIONES_BASICAS,
 } from "./shared.js";
 
 const itemId = new URLSearchParams(location.search).get("item");
+let turnMode = new URLSearchParams(location.search).get("turno") === "1";
 
 let isGM = false;
 let me = null;
@@ -189,6 +190,12 @@ function renderSheet() {
       <button id="to-lib" title="Guardar una copia en tu biblioteca">💾</button>
       <button id="change" title="Cambiar por otra ficha">🔁</button>
       <button id="remove" title="Quitarle la ficha a todos los tokens con este nombre">🗑</button>
+    </div>
+    <div class="gm-bar vida-bar">
+      <span title="Quién ve la barra de vida de este token, además de vos y del dueño de la ficha">❤️ Ven su vida:</span>
+      <button class="chip ${data.verVida === "todos" ? "on" : ""}" data-vv="todos">Todos</button>
+      ${players.filter((p) => p.id !== data.owner).map((p) => `<button class="chip ${data.verVida === "todos" || (Array.isArray(data.verVida) && data.verVida.includes(p.id)) ? "on" : ""}" data-vv="${esc(p.id)}">${esc(p.name)}</button>`).join("")}
+      ${!players.filter((p) => p.id !== data.owner).length ? `<span class="muted">no hay otros jugadores conectados</span>` : ""}
     </div>` : "";
 
   const modo = rollMode();
@@ -227,6 +234,7 @@ function renderSheet() {
     </div>` : (canEdit ? `<div class="row rests"><button id="rest-short">☕ Descanso corto</button><button id="rest-long">🌙 Descanso largo</button></div>` : "");
 
   $("app").innerHTML = `
+    ${turnPanel(f, canEdit)}
     ${ownerSel}
     <header class="sheet-head">
       <div>
@@ -290,7 +298,8 @@ ${deathBlock(f, canEdit)}
     </details>`;
 
   if (canEdit) rollify();
-  linkSpells();
+  linkSpells().then(() => fillTurnPanel(f));
+  bindTurnPanel();
   $("spells").onclick = () => openBrowser();
 
   const update = (fn) => {
@@ -301,6 +310,19 @@ ${deathBlock(f, canEdit)}
 
   if (isGM) {
     $("owner").value = data.owner || "";
+    document.querySelectorAll("[data-vv]").forEach((b) => {
+      b.onclick = () => {
+        const id = b.dataset.vv;
+        let vv = data.verVida;
+        if (id === "todos") vv = vv === "todos" ? [] : "todos";
+        else {
+          let list = vv === "todos" ? players.filter((p) => p.id !== data.owner).map((p) => p.id) : Array.isArray(vv) ? [...vv] : [];
+          list = list.includes(id) ? list.filter((x) => x !== id) : [...list, id];
+          vv = list;
+        }
+        save({ ...data, verVida: vv }).then(render);
+      };
+    });
     $("owner").onchange = (e) => {
       const p = players.find((x) => x.id === e.target.value);
       save({ ...data, owner: e.target.value || null, ownerName: p ? p.name : "" });
@@ -438,6 +460,108 @@ function deathBlock(f, canEdit) {
       ${canEdit && !m.muerto && !m.estable ? `<button id="death-roll" class="primary">🎲 Tirar salvación (d20)</button>` : ""}
       ${canEdit && (m.muerto || m.estable) ? `<button id="death-reset">↺ Reiniciar</button>` : ""}
     </div>`;
+}
+
+// ---------------- Es tu turno (Battle Board) ----------------
+
+function bbMeta() {
+  return item && item.metadata[BB_KEY] && typeof item.metadata[BB_KEY] === "object" ? item.metadata[BB_KEY] : null;
+}
+function isTurn() {
+  const m = bbMeta();
+  return Boolean(m && m.active);
+}
+
+function turnPanel(f, canEdit) {
+  if (!turnMode || !canEdit) return "";
+  if (!isTurn()) {
+    return `<div class="turn off"><b>⌛ Ya no es tu turno.</b> <button id="turn-hide" class="mini">Cerrar</button></div>`;
+  }
+  const r = (bbMeta().turnResources) || {};
+  const chip = (k, label) => `<button class="tchip ${r[k] ? "used" : ""}" data-res="${k}" title="Tocá para marcarla como usada">${r[k] ? "✔" : "○"} ${label}</button>`;
+  const mov = Number(r.movementUsed) || 0;
+  return `
+    <div class="turn">
+      <div class="turn-head">
+        <span class="turn-title">⚔️ ¡Es tu turno, ${esc(f.nombre)}!</span>
+        <button id="turn-hide" class="mini" title="Ocultar este panel">✕</button>
+      </div>
+      <div class="tchips">
+        ${chip("actionUsed", "Acción")}
+        ${chip("bonusActionUsed", "Acción adicional")}
+        ${chip("reactionUsed", "Reacción")}
+        <span class="tmov">👟 ${esc(f.vel)}${mov ? ` · movido ${mov * 5} pies` : ""}</span>
+      </div>
+      <details class="tsec" open><summary>🗡 Acción: qué podés hacer</summary><div id="t-accion" class="md rollable"></div></details>
+      <details class="tsec" open><summary>⚡ Acción adicional</summary><div id="t-bonus" class="md rollable"></div></details>
+      <details class="tsec"><summary>🛡 Reacción (en el turno de otro)</summary><div id="t-reac" class="md rollable"></div></details>
+      <details class="tsec"><summary>📘 Otras acciones que siempre podés hacer</summary>
+        <ul class="basic">${ACCIONES_BASICAS.map(([n, d]) => `<li><b>${esc(n)}:</b> ${esc(d)}</li>`).join("")}</ul>
+      </details>
+      <div class="row"><button id="turn-end" class="primary">⏭ Terminar mi turno</button></div>
+    </div>`;
+}
+
+const plainTxt = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/** Arma las listas del panel con lo que dice la ficha y los conjuros que tiene. */
+async function fillTurnPanel(f) {
+  if (!$("t-accion")) return;
+  await loadSpells();
+  const secs = f.secciones || [];
+  const bullets = (sec) => String(sec.md || "").split("\n").filter((l) => /^\s*[*-]\s+/.test(l)).map((l) => l.replace(/^\s*[*-]\s+/, ""));
+  const ataques = secs.filter((s) => /^(ataques|acciones)$/i.test(plainTxt(s.t).trim())).flatMap(bullets);
+  // Conjuros de la ficha, según su tiempo de lanzamiento.
+  const all = secs.map((s) => s.md).join("\n");
+  const found = new Map();
+  for (const m of all.matchAll(/(?<![*\w])\*(?![\s*])([^*\n]+?)(?<!\s)\*(?!\*)/g)) {
+    const c = spellIndex && spellIndex.get(plain(m[1]));
+    if (c) found.set(c.id, c);
+  }
+  const spellsBy = (fn) => [...found.values()].filter(fn).sort((a, b) => a.nivel - b.nivel);
+  const spellLine = (c) => `*${c.nombre}* (${c.nivel === 0 ? "truco" : `nv ${c.nivel}`}): ${c.resumen}`;
+  const accSpells = spellsBy((c) => /^Acción($| \()/.test(c.tiempo));
+  const bonusSpells = spellsBy((c) => c.tiempo.startsWith("Acción adicional"));
+  const reacSpells = spellsBy((c) => c.tiempo.startsWith("Reacción"));
+  // Rasgos que mencionan acción adicional o reacción.
+  const rasgos = secs.filter((s) => !/ataques|acciones|conjuros|equipo|historia|personalidad|idiomas|salvaciones|habilidades/.test(plainTxt(s.t))).flatMap(bullets);
+  const bonusRasgos = rasgos.filter((l) => plainTxt(l).includes("accion adicional"));
+  const reacRasgos = rasgos.filter((l) => /reaccion/.test(plainTxt(l)));
+  const list = (lines) => (lines.length ? lines.map((l) => `* ${l}`).join("\n") : "");
+  $("t-accion").innerHTML = md(
+    (ataques.length ? `**Atacar**\n${list(ataques)}\n\n` : "") +
+    (accSpells.length ? `**Conjuros (1 acción)**\n${list(accSpells.map(spellLine))}` : "")) || `<p class="muted">Mirá las acciones básicas más abajo.</p>`;
+  $("t-bonus").innerHTML = md(list([...bonusRasgos, ...bonusSpells.map(spellLine)])) || `<p class="muted">Nada especial por ahora: si no tenés nada, se pierde y no pasa nada.</p>`;
+  $("t-reac").innerHTML = md(list(["**Ataque de oportunidad:** cuando un enemigo sale de tu alcance, le hacés un ataque cuerpo a cuerpo.", ...reacRasgos, ...reacSpells.map(spellLine)]));
+  rollify();
+  linkSpells();
+}
+
+async function setTurnResource(key) {
+  try {
+    await OBR.scene.items.updateItems([itemId], (items) => {
+      for (const it of items) {
+        const m = it.metadata[BB_KEY];
+        if (!m || typeof m !== "object") continue;
+        const r = { actionUsed: false, bonusActionUsed: false, reactionUsed: false, movementUsed: 0, ended: false, ...(m.turnResources || {}) };
+        if (key === "ended") r.ended = true;
+        else r[key] = !r[key];
+        it.metadata[BB_KEY] = { ...m, turnResources: r };
+      }
+    });
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function bindTurnPanel() {
+  if ($("turn-hide")) $("turn-hide").onclick = () => { turnMode = false; render(); };
+  document.querySelectorAll("[data-res]").forEach((b) => { b.onclick = () => setTurnResource(b.dataset.res); });
+  if ($("turn-end")) $("turn-end").onclick = async () => {
+    await setTurnResource("ended");
+    OBR.notification.show("⏭ Turno terminado.", "INFO");
+    OBR.modal.close(MODAL_ID);
+  };
 }
 
 // ---------------- Conjuros ----------------
@@ -808,7 +932,10 @@ OBR.onReady(async () => {
   OBR.scene.items.onChange((items) => {
     const it = items.find((x) => x.id === itemId);
     const next = it ? it.metadata[KEY] || null : null;
-    if (JSON.stringify(next) === JSON.stringify(data) && Boolean(it) === Boolean(item)) return;
+    const bbBefore = item ? JSON.stringify(item.metadata[BB_KEY] || null) : "";
+    const bbAfter = it ? JSON.stringify(it.metadata[BB_KEY] || null) : "";
+    const bbChanged = turnMode && bbBefore !== bbAfter;
+    if (!bbChanged && JSON.stringify(next) === JSON.stringify(data) && Boolean(it) === Boolean(item)) return;
     const focused = document.activeElement && document.activeElement.id === "notes";
     item = it || null;
     data = next;

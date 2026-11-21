@@ -1,17 +1,17 @@
 import OBR from "@owlbear-rodeo/sdk";
 import {
-  ID, KEY, MODAL_ID, BASE, VERSION, syncScene, INIT_KEY,
+  ID, KEY, MODAL_ID, BASE, VERSION, syncScene, INIT_KEY, BB_KEY,
   PENDING_KEY, DICE_ROLL_KEY, DICE_VALUES_KEY, rollSig, rollHasType, diceTotal, normalizeSheet,
   applyHeal, applyDeathSave, firstD20,
 } from "./shared.js";
 import { startBars } from "./bars.js";
 
-function openSheet(itemId) {
+function openSheet(itemId, turno = false) {
   // Al abrir la ficha se deselecciona el token, así no queda el menú del click derecho abierto.
   OBR.player.deselect().catch(() => { /* nada */ });
   OBR.modal.open({
     id: MODAL_ID,
-    url: `${BASE}/ficha.html?v=${VERSION}&item=${encodeURIComponent(itemId)}`,
+    url: `${BASE}/ficha.html?v=${VERSION}&item=${encodeURIComponent(itemId)}${turno ? "&turno=1" : ""}`,
     width: 600,
     height: 820,
   });
@@ -139,6 +139,35 @@ OBR.onReady(async () => {
   }
   OBR.scene.onReadyChange((ready) => { if (ready) schedule(); });
   OBR.scene.items.onChange(schedule);
+
+  // "Es tu turno": cuando Battle Board le da el turno a un token con ficha propia, se abre la ficha.
+  let prevActive = null;
+  async function checkTurn() {
+    try {
+      if (!(await OBR.scene.isReady())) { prevActive = null; return; }
+      const gm = (await OBR.player.getRole()) === "GM";
+      const items = await OBR.scene.items.getItems((it) => Boolean(it.metadata[BB_KEY] && it.metadata[BB_KEY].active === true));
+      const now = new Set(items.map((it) => it.id));
+      if (prevActive) {
+        let dmAuto = false;
+        try { dmAuto = localStorage.getItem("fichas-turno-dm") === "1"; } catch { /* nada */ }
+        for (const it of items) {
+          if (prevActive.has(it.id)) continue;
+          const d = it.metadata[KEY];
+          if (!d || !d.ficha) continue;
+          const mine = !gm && d.owner === me;
+          const dmToken = gm && dmAuto && d.ficha.tipo !== "pj";
+          if (mine || dmToken) { openSheet(it.id, true); break; }
+        }
+      }
+      prevActive = now;
+    } catch (e) {
+      console.error("fichas: turno", e);
+    }
+  }
+  OBR.scene.items.onChange(() => checkTurn());
+  OBR.scene.onReadyChange(() => { prevActive = null; checkTurn(); });
+  checkTurn();
   window.addEventListener("storage", schedule);
   schedule();
 });

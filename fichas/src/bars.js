@@ -1,10 +1,10 @@
 import OBR, { buildShape, buildText } from "@owlbear-rodeo/sdk";
-import { ID, KEY, isToken, estadosText, normalizeSheet } from "./shared.js";
+import { ID, KEY, isToken, estadosText, normalizeSheet, canSeeHp } from "./shared.js";
 
 // Barras de vida y estados dibujados arriba/abajo de cada token.
 // Son ítems "locales": cada navegador dibuja solo lo que esa persona puede ver.
 //  - DM: todo.
-//  - Jugadores: la vida de los PJ (y de lo que sea suyo); de los enemigos, solo los estados.
+//  - Jugadores: solo la vida de su propio personaje (o la de otros si el DM lo permite); de los demás, solo los estados.
 
 const MARK = `${ID}/overlay`;
 const COLORS = { ok: "#5fc9a8", mid: "#f2c66d", low: "#ff6b7d", bg: "#1b1d2b", temp: "#7fb8ff" };
@@ -49,7 +49,7 @@ export function startBars() {
       const f = normalizeSheet({ ...d.ficha });
       if (!isGM && !t.visible) return;
       const b = boundsList[i];
-      const showHp = isGM || f.tipo === "pj" || d.owner === me;
+      const showHp = canSeeHp(d, me, isGM);
       const w = Math.max(dpi * 0.6, b.width * 0.9);
       const h = Math.max(8, dpi * 0.13);
       const x = b.center.x - w / 2;
