@@ -1,17 +1,17 @@
 {
   "name": "Caja del DM (ES)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "manifest_version": 1,
   "author": "Yacoloco",
   "homepage_url": "https://github.com/Yacoloco/owlbear-es",
-  "description": "Todo lo del DM en un solo lugar: tablas de impro, búsquedas y rastreo, y persecuciones.",
+  "description": "Todo lo del DM en un solo lugar: notas de escena, tablas de impro, búsquedas y rastreo, y persecuciones.",
   "icon": "/owlbear-es/impro/icon.svg",
   "action": {
     "title": "Caja del DM",
     "icon": "/owlbear-es/impro/icon.svg",
-    "popover": "/owlbear-es/impro/index.html?v=1.1",
+    "popover": "/owlbear-es/impro/index.html?v=1.2",
     "height": 620,
     "width": 400
   },
-  "background_url": "/owlbear-es/impro/background.html?v=1.1"
+  "background_url": "/owlbear-es/impro/background.html?v=1.2"
 }

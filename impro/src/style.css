@@ -76,3 +76,20 @@ button:disabled { opacity: .45; cursor: default; }
 .warn { color: #ffd86b; }
 .agot { color: var(--red); font-weight: 600; }
 .ronda { align-self: center; flex: none; }
+
+/* Escenas */
+.btn { display: inline-flex; align-items: center; gap: 4px; background: #3a3f5c; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; cursor: pointer; font-size: 13px; }
+.btn.primary { background: #5b4a8a; border-color: var(--accent); align-self: flex-start; }
+.tab { font-size: 12px; padding: 6px 2px; }
+.sc-title { margin: 2px 0; color: var(--accent); font-size: 16px; }
+.scene { display: flex; flex-direction: column; gap: 6px; }
+.sec { background: var(--panel); border-radius: 8px; padding: 6px 10px; }
+.sec summary { cursor: pointer; font-weight: 700; color: var(--accent); font-size: 13px; }
+.md { font-size: 13px; line-height: 1.45; }
+.md p { margin: 6px 0; } .md ul { margin: 6px 0; padding-left: 18px; } .md li { margin: 3px 0; }
+.md h5 { margin: 8px 0 2px; font-size: 13px; color: #e6dcff; }
+.roll { color: #ffd86b; font-weight: 700; cursor: pointer; border-bottom: 1px dashed rgba(255, 216, 107, .5); }
+.roll:hover { background: rgba(255, 216, 107, .15); }
+.roll.sent { background: rgba(95, 201, 168, .35); }
+textarea { width: 100%; font: inherit; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; resize: vertical; line-height: 1.4; }
+#e-sel { flex: 1; }
