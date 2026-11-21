@@ -27,7 +27,7 @@ jobs:
         run: yarn install --frozen-lockfile && yarn build
       - name: Construir Dados
         working-directory: dados
-        run: yarn install --frozen-lockfile && yarn build
+        run: yarn install && yarn build
       - name: Construir Música
         working-directory: musica
         run: npm install && npm run build

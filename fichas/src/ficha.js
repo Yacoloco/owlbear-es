@@ -438,6 +438,8 @@ async function prepare(p, label, kind = null) {
   lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Iniciativa" : kind === "heal" ? " → se suma a los PG" : ""}`;
   const el = $("rollmsg");
   if (el) el.innerHTML = lastMsg;
+  // Se cierra la ficha y Dados se abre solo con la tirada cargada.
+  setTimeout(() => OBR.modal.close(MODAL_ID), 120);
 }
 
 /** Convierte los "+5" y "1d8+3" de la ficha en botones para tirar. */

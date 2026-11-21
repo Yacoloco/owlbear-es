@@ -19,12 +19,7 @@ OBR.onReady(() => {
 // (si esta versión del SDK lo permite) para que el jugador solo tenga que tirar.
 window.addEventListener("storage", (event) => {
   if (event.key !== "dados-preparar" || !event.newValue) return;
-  const action = (OBR as any).action;
-  if (action && typeof action.open === "function") {
-    try {
-      action.open();
-    } catch {
-      // nada
-    }
-  }
+  OBR.action.open().catch(() => {
+    // nada
+  });
 });
