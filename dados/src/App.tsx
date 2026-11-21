@@ -3,10 +3,12 @@ import Container from "@mui/material/Container";
 
 import { InteractiveTray } from "./tray/InteractiveTray";
 import { Sidebar } from "./controls/Sidebar";
+import { PresetListener } from "./plugin/PresetListener";
 
 export function App() {
   return (
     <Container disableGutters maxWidth="md">
+      <PresetListener />
       <Stack direction="row" justifyContent="center">
         <Sidebar />
         <InteractiveTray />

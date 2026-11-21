@@ -14,3 +14,17 @@ OBR.onReady(() => {
     marginThreshold: 0,
   });
 });
+
+// Cuando la extensión Fichas prepara dados, se abre la bandeja de Dados
+// (si esta versión del SDK lo permite) para que el jugador solo tenga que tirar.
+window.addEventListener("storage", (event) => {
+  if (event.key !== "dados-preparar" || !event.newValue) return;
+  const action = (OBR as any).action;
+  if (action && typeof action.open === "function") {
+    try {
+      action.open();
+    } catch {
+      // nada
+    }
+  }
+});

@@ -3,7 +3,8 @@ import {
   KEY, MODAL_ID, STATS, TIPOS, mod, sg, $, esc, md, blankSheet,
   loadLibrary, mergeIntoLibrary, parseImport, sortSheets,
   normName, setLink, removeLink, copyFromLink, isToken, updateLinkTemplate,
-  ESTADOS, normalizeSheet, initBonus, roll, rollMessage, ROLL_CHANNEL, INIT_KEY,
+  ESTADOS, normalizeSheet, initBonus, parseExpr, exprText, prepareDice, rollSig,
+  PENDING_KEY, DICE_ROLL_KEY,
 } from "./shared.js";
 
 const itemId = new URLSearchParams(location.search).get("item");
@@ -193,15 +194,14 @@ function renderSheet() {
   const modo = rollMode();
   const rollBar = canEdit ? `
     <div class="rollbar">
-      <span class="muted">🎲 Tocá cualquier <span class="roll demo">+5</span> o <span class="roll demo">1d8</span> para tirar.</span>
+      <span class="muted" id="rollmsg">${lastMsg || `🎲 Tocá cualquier <span class="roll demo">+5</span> o <span class="roll demo">1d8</span> y quedan listos en <b>Dados</b>.`}</span>
       <span class="sp"></span>
       <span class="seg" id="modo">
         <button data-m="desventaja" class="${modo === "desventaja" ? "on" : ""}" title="Desventaja">⬇️</button>
         <button data-m="normal" class="${modo === "normal" ? "on" : ""}" title="Normal">Normal</button>
         <button data-m="ventaja" class="${modo === "ventaja" ? "on" : ""}" title="Ventaja">⬆️</button>
       </span>
-      ${isGM ? `<button id="vis" title="Quién ve tus tiradas">${publicRolls() ? "👁 Públicas" : "🙈 Ocultas"}</button>` : ""}
-      <button id="init" title="Tirar iniciativa y anotarla en la extensión Iniciativa">⚔️ Iniciativa ${sg(initBonus(f))}</button>
+      <button id="init" title="Prepara la tirada de iniciativa en Dados; el resultado se anota solo en Iniciativa">⚔️ Iniciativa ${sg(initBonus(f))}</button>
     </div>` : "";
 
   const estados = `
@@ -374,12 +374,12 @@ function renderSheet() {
         OBR.notification.show("No te quedan dados de golpe.", "WARNING");
         return;
       }
-      const res = roll(`1${r.dado}${sg(mod(f.stats?.CON))}`);
-      const heal = Math.max(0, res.total);
-      announce(res, "Dado de golpe");
+      const p = parseExpr(`1${r.dado}${sg(mod(f.stats?.CON))}`);
+      if (!p) return;
+      // Se prepara en Dados; cuando el jugador tira, la curación se suma sola.
+      prepare(p, "Dado de golpe", "heal");
       update((nf) => {
         nf.recursos[Number(b.dataset.hd)].usados = (Number(nf.recursos[Number(b.dataset.hd)].usados) || 0) + 1;
-        nf.pgActual = Math.min(Number(nf.pgMax) || 0, (Number(nf.pgActual) || 0) + heal);
       });
     };
   });
@@ -402,8 +402,7 @@ function renderSheet() {
   document.querySelectorAll("#modo [data-m]").forEach((b) => {
     b.onclick = () => { setRollMode(b.dataset.m); render(); };
   });
-  if (isGM) $("vis").onclick = () => { setPublicRolls(!publicRolls()); render(); };
-  $("init").onclick = rollInitiative;
+  $("init").onclick = () => prepare(parseExpr(sg(initBonus(f))), "Iniciativa", "init");
 
   let t = null;
   $("notes").oninput = (e) => {
@@ -421,47 +420,24 @@ function rollMode() {
 function setRollMode(m) {
   try { localStorage.setItem("fichas-modo", m); } catch { /* nada */ }
 }
-function publicRolls() {
-  try { return localStorage.getItem("fichas-publicas") === "1"; } catch { return false; }
-}
-function setPublicRolls(v) {
-  try { localStorage.setItem("fichas-publicas", v ? "1" : "0"); } catch { /* nada */ }
-}
+let lastMsg = "";
 
-/** Muestra la tirada: la de un jugador la ven todos; la del DM, según su elección. */
-function announce(res, que) {
-  const quien = data && data.ficha ? data.ficha.nombre : "Tirada";
-  const msg = rollMessage(res, quien, que);
-  if (!isGM || publicRolls()) {
-    OBR.broadcast.sendMessage(ROLL_CHANNEL, { msg }, { destination: "ALL" });
-  } else {
-    OBR.notification.show(`🙈 ${msg}`, "DEFAULT");
+/**
+ * Carga la tirada en la extensión Dados (no tira).
+ * kind "init" o "heal": cuando el jugador tire, Fichas anota el resultado solo.
+ */
+async function prepare(p, label, kind = null) {
+  if (!p) return;
+  const isD20 = p.type === "D20" && p.count === 1;
+  const adv = prepareDice(p, isD20 ? rollMode() : "normal");
+  if (kind) {
+    let sig0 = "";
+    try { sig0 = rollSig((await OBR.player.getMetadata())[DICE_ROLL_KEY]); } catch { /* nada */ }
+    try { localStorage.setItem(PENDING_KEY, JSON.stringify({ kind, itemId, sig0, type: p.type, t: Date.now() })); } catch { /* nada */ }
   }
-  const log = $("rolllog");
-  if (log) log.textContent = msg;
-}
-
-function doRoll(expr, label) {
-  const isD20 = /^[+−-]\d+$/.test(expr.replace(/\s/g, "")) || /^1?d20/.test(expr);
-  const res = roll(expr, isD20 ? rollMode() : "normal");
-  if (!res) return;
-  announce(res, label);
-}
-
-async function rollInitiative() {
-  const f = data.ficha;
-  const res = roll(sg(initBonus(f)), rollMode());
-  announce(res, "Iniciativa");
-  try {
-    await OBR.scene.items.updateItems([itemId], (items) => {
-      for (const it of items) {
-        const prev = it.metadata[INIT_KEY];
-        it.metadata[INIT_KEY] = { count: String(res.total), active: Boolean(prev && prev.active) };
-      }
-    });
-  } catch (e) {
-    console.error(e);
-  }
+  lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Iniciativa" : kind === "heal" ? " → se suma a los PG" : ""}`;
+  const el = $("rollmsg");
+  if (el) el.innerHTML = lastMsg;
 }
 
 /** Convierte los "+5" y "1d8+3" de la ficha en botones para tirar. */
@@ -646,7 +622,7 @@ OBR.onReady(async () => {
   $("close").onclick = () => OBR.modal.close(MODAL_ID);
   $("app").addEventListener("click", (e) => {
     const el = e.target.closest(".roll[data-roll]");
-    if (el && !el.classList.contains("demo")) doRoll(el.dataset.roll, labelFor(el));
+    if (el && !el.classList.contains("demo")) prepare(parseExpr(el.dataset.roll), labelFor(el));
   });
   me = await OBR.player.getId();
   isGM = (await OBR.player.getRole()) === "GM";

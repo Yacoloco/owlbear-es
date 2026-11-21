@@ -1,6 +1,6 @@
 {
   "name": "Fichas de personaje (ES)",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "manifest_version": 1,
   "author": "Yacoloco",
   "homepage_url": "https://github.com/Yacoloco/owlbear-es",
@@ -9,9 +9,9 @@
   "action": {
     "title": "Fichas",
     "icon": "/owlbear-es/fichas/icon.svg",
-    "popover": "/owlbear-es/fichas/index.html?v=1.2",
+    "popover": "/owlbear-es/fichas/index.html?v=1.3",
     "height": 600,
     "width": 380
   },
-  "background_url": "/owlbear-es/fichas/background.html?v=1.2"
+  "background_url": "/owlbear-es/fichas/background.html?v=1.3"
 }

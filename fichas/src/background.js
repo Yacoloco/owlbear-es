@@ -1,5 +1,8 @@
 import OBR from "@owlbear-rodeo/sdk";
-import { ID, KEY, MODAL_ID, BASE, VERSION, syncScene, ROLL_CHANNEL } from "./shared.js";
+import {
+  ID, KEY, MODAL_ID, BASE, VERSION, syncScene, INIT_KEY,
+  PENDING_KEY, DICE_ROLL_KEY, DICE_VALUES_KEY, rollSig, rollHasType, diceTotal, normalizeSheet,
+} from "./shared.js";
 import { startBars } from "./bars.js";
 
 function openSheet(itemId) {
@@ -44,10 +47,39 @@ OBR.onReady(async () => {
     },
   });
 
-  // Tiradas de los demás (y las propias públicas).
-  OBR.broadcast.onMessage(ROLL_CHANNEL, (e) => {
-    if (e.data && e.data.msg) OBR.notification.show(String(e.data.msg).slice(0, 300), "DEFAULT");
-  });
+  // Iniciativa y dados de golpe: cuando el jugador tira en Dados, se anota solo.
+  async function checkPending(metadata) {
+    let pending;
+    try { pending = JSON.parse(localStorage.getItem(PENDING_KEY) || "null"); } catch { pending = null; }
+    if (!pending || Date.now() - pending.t > 5 * 60_000) return;
+    const roll = metadata[DICE_ROLL_KEY];
+    const values = metadata[DICE_VALUES_KEY];
+    if (!roll || !values) return;
+    const sig = rollSig(roll);
+    if (!sig || sig === pending.sig0 || !rollHasType(roll, pending.type)) return;
+    if (Object.values(values).some((v) => v === null || v === undefined)) return; // todavía rodando
+    const total = diceTotal(roll, values);
+    if (total === null) return;
+    try { localStorage.removeItem(PENDING_KEY); } catch { /* nada */ }
+    try {
+      await OBR.scene.items.updateItems([pending.itemId], (items) => {
+        for (const it of items) {
+          if (pending.kind === "init") {
+            const prev = it.metadata[INIT_KEY];
+            it.metadata[INIT_KEY] = { count: String(total), active: Boolean(prev && prev.active) };
+          } else if (pending.kind === "heal" && it.metadata[KEY]) {
+            const d = it.metadata[KEY];
+            const f = normalizeSheet({ ...d.ficha });
+            f.pgActual = Math.min(Number(f.pgMax) || 0, (Number(f.pgActual) || 0) + Math.max(0, total));
+            it.metadata[KEY] = { ...d, ficha: f, rev: (d.rev || 0) + 1 };
+          }
+        }
+      });
+    } catch (e) {
+      console.error("fichas: anotar tirada", e);
+    }
+  }
+  OBR.player.onChange((p) => checkPending(p.metadata || {}));
 
   // Barras de vida y estados sobre los tokens.
   startBars();

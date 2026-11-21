@@ -5,7 +5,7 @@ export const ID = "com.yacoloco.fichas";
 export const KEY = `${ID}/ficha`;
 export const MODAL_ID = `${ID}/modal`;
 export const BASE = "/owlbear-es/fichas";
-export const VERSION = "1.2";
+export const VERSION = "1.3";
 
 export const STATS = ["FUE", "DES", "CON", "INT", "SAB", "CAR"];
 export const TIPOS = { pj: "PJ", pnj: "PNJ", enemigo: "Enemigo" };
@@ -346,4 +346,77 @@ export function roll(expr, modo = "normal") {
 export function rollMessage(r, quien, que) {
   const crit = r.nat === 20 ? " ✨¡20 natural!" : r.nat === 1 ? " 💀 1 natural" : "";
   return `🎲 ${quien}${que ? ` · ${que}` : ""}: ${r.total}  (${r.detalle})${crit}`;
+}
+
+// ---------- Conexión con la extensión Dados (ES) ----------
+// Fichas no tira: carga los dados en la bandeja de Dados y el jugador tira desde ahí.
+// Las dos extensiones viven en el mismo sitio, así que se hablan por localStorage.
+
+export const PRESET_KEY = "dados-preparar";
+export const PENDING_KEY = "fichas-pendiente";
+export const DICE_ROLL_KEY = "rodeo.owlbear.dice/roll";
+export const DICE_VALUES_KEY = "rodeo.owlbear.dice/rollValues";
+
+/** "1d8+3" → { type: "D8", count: 1, bonus: 3 }; "+5" → 1d20+5. */
+export function parseExpr(expr) {
+  let e = String(expr).replace(/\s+/g, "").replace("−", "-").toLowerCase();
+  if (/^[+-]\d+$/.test(e)) e = `1d20${e}`;
+  const m = e.match(/^(\d*)d(\d+)([+-]\d+)?$/);
+  if (!m) return null;
+  const faces = Number(m[2]);
+  if (![4, 6, 8, 10, 12, 20, 100].includes(faces)) return null;
+  return { type: `D${faces}`, count: Math.max(1, Math.min(20, Number(m[1] || 1))), bonus: Number(m[3] || 0) };
+}
+
+export function exprText(p) {
+  return `${p.count}d${p.type.slice(1)}${p.bonus ? (p.bonus > 0 ? `+${p.bonus}` : p.bonus) : ""}`;
+}
+
+/** Deja los dados listos en la bandeja de Dados (no tira). */
+export function prepareDice(p, modo = "normal") {
+  const advantage = p.type === "D20" && p.count === 1 && modo !== "normal" ? (modo === "ventaja" ? "ADVANTAGE" : "DISADVANTAGE") : null;
+  const preset = { dice: { [p.type]: p.count }, bonus: p.bonus, advantage, t: Date.now(), n: Math.random() };
+  try { localStorage.setItem(PRESET_KEY, JSON.stringify(preset)); } catch { /* nada */ }
+  return advantage;
+}
+
+/** Ids de los dados de una tirada (para saber si es una tirada nueva). */
+export function rollSig(roll) {
+  const ids = [];
+  const walk = (d) => { for (const x of (d && d.dice) || []) { if (x && typeof x.id === "string") ids.push(x.id); else walk(x); } };
+  walk(roll);
+  return ids.join(",");
+}
+
+export function rollHasType(roll, type) {
+  let found = false;
+  const walk = (d) => { for (const x of (d && d.dice) || []) { if (x && x.type === type) found = true; else if (x && x.dice) walk(x); } };
+  walk(roll);
+  return found;
+}
+
+/** Resultado final de una tirada de Dados (misma cuenta que hace la extensión). */
+export function diceTotal(dice, values) {
+  if (!dice || !Array.isArray(dice.dice)) return null;
+  const bonus = dice.bonus || 0;
+  if (dice.dice.length === 2 && (!dice.combination || dice.combination === "SUM")) {
+    const [a, b] = dice.dice;
+    if (a && b && a.type === "D100" && b.type === "D10" && values[a.id] !== undefined && values[b.id] !== undefined) {
+      return values[a.id] === 0 && values[b.id] === 0 ? 100 + bonus : values[a.id] + values[b.id] + bonus;
+    }
+  }
+  const vals = [];
+  for (const x of dice.dice) {
+    if (x && typeof x.id === "string") {
+      const v = values[x.id];
+      if (v !== undefined && v !== null) vals.push(v === 0 && x.type === "D10" ? 10 : v);
+    } else if (x && Array.isArray(x.dice)) {
+      const v = diceTotal(x, values);
+      if (v !== null) vals.push(v);
+    }
+  }
+  if (!vals.length || dice.combination === "NONE") return dice.bonus === undefined ? null : dice.bonus;
+  if (dice.combination === "HIGHEST") return Math.max(...vals) + bonus;
+  if (dice.combination === "LOWEST") return Math.min(...vals) + bonus;
+  return vals.reduce((s, v) => s + v, 0) + bonus;
 }
