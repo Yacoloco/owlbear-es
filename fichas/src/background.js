@@ -6,6 +6,8 @@ import {
 import { startBars } from "./bars.js";
 
 function openSheet(itemId) {
+  // Al abrir la ficha se deselecciona el token, así no queda el menú del click derecho abierto.
+  OBR.player.deselect().catch(() => { /* nada */ });
   OBR.modal.open({
     id: MODAL_ID,
     url: `${BASE}/ficha.html?v=${VERSION}&item=${encodeURIComponent(itemId)}`,
