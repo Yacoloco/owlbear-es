@@ -5,7 +5,7 @@ export const ID = "com.yacoloco.fichas";
 export const KEY = `${ID}/ficha`;
 export const MODAL_ID = `${ID}/modal`;
 export const BASE = "/owlbear-es/fichas";
-export const VERSION = "1.7";
+export const VERSION = "1.8";
 
 export const STATS = ["FUE", "DES", "CON", "INT", "SAB", "CAR"];
 export const TIPOS = { pj: "PJ", pnj: "PNJ", enemigo: "Enemigo" };

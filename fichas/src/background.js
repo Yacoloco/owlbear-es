@@ -91,8 +91,15 @@ OBR.onReady(async () => {
       await OBR.scene.items.updateItems([pending.itemId], (items) => {
         for (const it of items) {
           if (pending.kind === "init") {
-            const prev = it.metadata[INIT_KEY];
-            it.metadata[INIT_KEY] = { count: String(total), active: Boolean(prev && prev.active) };
+            const bb = it.metadata[BB_KEY];
+            if (bb && typeof bb === "object") {
+              // Battle Board: se anota en su orden de turnos.
+              it.metadata[BB_KEY] = { ...bb, initiative: total };
+            } else {
+              // Si el token no está en Battle Board, va al rastreador de iniciativa común de Owlbear.
+              const prev = it.metadata[INIT_KEY];
+              it.metadata[INIT_KEY] = { count: String(total), active: Boolean(prev && prev.active) };
+            }
           } else if (pending.kind === "heal" && it.metadata[KEY]) {
             const d = it.metadata[KEY];
             const f = normalizeSheet(JSON.parse(JSON.stringify(d.ficha)));

@@ -208,7 +208,7 @@ function renderSheet() {
         <button data-m="normal" class="${modo === "normal" ? "on" : ""}" title="Normal">Normal</button>
         <button data-m="ventaja" class="${modo === "ventaja" ? "on" : ""}" title="Ventaja">⬆️</button>
       </span>
-      <button id="init" title="Prepara la tirada de iniciativa en Dados; el resultado se anota solo en Iniciativa">⚔️ Iniciativa ${sg(initBonus(f))}</button>
+      <button id="init" title="Prepara la tirada de iniciativa en Dados; el resultado se anota solo en Battle Board">⚔️ Iniciativa ${sg(initBonus(f))}</button>
     </div>` : "";
 
   const estados = `
@@ -724,7 +724,7 @@ async function prepare(p, label, kind = null, forceMode = null) {
     try { sig0 = rollSig((await OBR.player.getMetadata())[DICE_ROLL_KEY]); } catch { /* nada */ }
     try { localStorage.setItem(PENDING_KEY, JSON.stringify({ kind, itemId, sig0, type: p.type, t: Date.now() })); } catch { /* nada */ }
   }
-  lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Iniciativa" : kind === "heal" ? " → se suma a los PG" : kind === "death" ? " → se anota sola" : ""}`;
+  lastMsg = `🎲 Listo en Dados: <b>${esc(label || "Tirada")}</b> · ${esc(exprText(p))}${adv ? (adv === "ADVANTAGE" ? " con ventaja" : " con desventaja") : ""}${kind === "init" ? " → se anota en Battle Board" : kind === "heal" ? " → se suma a los PG" : kind === "death" ? " → se anota sola" : ""}`;
   const el = $("rollmsg");
   if (el) el.innerHTML = lastMsg;
   // Se cierra la ficha (y el menú del token) y Dados se abre solo con la tirada cargada.
